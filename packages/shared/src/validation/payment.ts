@@ -29,6 +29,35 @@ export const createRazorpayOrderSchema = z.object({
   memberId: z.string().uuid().optional(),
 });
 
+const optionalQueryText = (max: number) => z.preprocess(
+  (value) => value === '' || value === undefined ? undefined : value,
+  z.string().trim().max(max).optional(),
+);
+
+const optionalDate = z.preprocess(
+  (value) => value === '' || value === undefined ? undefined : value,
+  z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD').optional(),
+);
+
+export const paymentHistoryQuerySchema = z.object({
+  memberId: z.preprocess(
+    (value) => value === '' || value === undefined ? undefined : value,
+    z.string().uuid().optional(),
+  ),
+  search: optionalQueryText(200),
+  from: optionalDate,
+  to: optionalDate,
+  method: z.preprocess(
+    (value) => value === '' || value === undefined ? undefined : value,
+    z.enum(['cash', 'upi', 'card', 'netbanking', 'razorpay']).optional(),
+  ),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+}).refine(
+  (query) => !query.from || !query.to || query.from <= query.to,
+  { message: 'From date must be before or equal to the to date', path: ['from'] },
+);
+
 export const verifyRazorpayPaymentSchema = z.object({
   razorpayOrderId: z.string().min(10),
   razorpayPaymentId: z.string().min(10),
@@ -40,3 +69,4 @@ export type CreatePlanInput = z.infer<typeof createPlanSchema>;
 export type CreateSubscriptionInput = z.infer<typeof createSubscriptionSchema>;
 export type CreateRazorpayOrderInput = z.infer<typeof createRazorpayOrderSchema>;
 export type VerifyRazorpayPaymentInput = z.infer<typeof verifyRazorpayPaymentSchema>;
+export type PaymentHistoryQuery = z.infer<typeof paymentHistoryQuerySchema>;

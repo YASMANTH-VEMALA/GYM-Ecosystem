@@ -1,5 +1,5 @@
 import prisma from '@gymstack/db';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '@gymstack/db';
 
 export async function getWorkoutPlans(gymId: string) {
   const plans = await prisma.workoutPlan.findMany({
@@ -126,47 +126,45 @@ export async function updateWorkoutPlan(id: string, gymId: string, data: {
   const existing = await prisma.workoutPlan.findFirst({ where: { id, gymId } });
   if (!existing) throw new Error('Workout plan not found');
 
-  // Delete existing days (cascades to exercises) and recreate
-  await prisma.workoutPlanDay.deleteMany({ where: { workoutPlanId: id } });
-
-  const plan = await prisma.workoutPlan.update({
-    where: { id },
-    data: {
-      name: data.name,
-      description: data.description,
-      isTemplate: data.isTemplate ?? existing.isTemplate,
-      days: {
-        create: data.days.map((day, dayIndex) => ({
-          dayNumber: day.dayNumber,
-          dayName: day.dayName,
-          sortOrder: dayIndex,
-          exercises: {
-            create: day.exercises.map((ex, exIndex) => ({
-              exerciseId: ex.exerciseId,
-              sets: ex.sets,
-              reps: ex.reps,
-              restSeconds: ex.restSeconds ?? 60,
-              notes: ex.notes,
-              sortOrder: exIndex,
-            })),
-          },
-        })),
+  return prisma.$transaction(async (tx) => {
+    await tx.workoutPlanDay.deleteMany({ where: { workoutPlanId: id } });
+    return tx.workoutPlan.update({
+      where: { id },
+      data: {
+        name: data.name,
+        description: data.description,
+        isTemplate: data.isTemplate ?? existing.isTemplate,
+        days: {
+          create: data.days.map((day, dayIndex) => ({
+            dayNumber: day.dayNumber,
+            dayName: day.dayName,
+            sortOrder: dayIndex,
+            exercises: {
+              create: day.exercises.map((ex, exIndex) => ({
+                exerciseId: ex.exerciseId,
+                sets: ex.sets,
+                reps: ex.reps,
+                restSeconds: ex.restSeconds ?? 60,
+                notes: ex.notes,
+                sortOrder: exIndex,
+              })),
+            },
+          })),
+        },
       },
-    },
-    include: {
-      days: {
-        orderBy: { sortOrder: 'asc' },
-        include: {
-          exercises: {
-            orderBy: { sortOrder: 'asc' },
-            include: { exercise: true },
+      include: {
+        days: {
+          orderBy: { sortOrder: 'asc' },
+          include: {
+            exercises: {
+              orderBy: { sortOrder: 'asc' },
+              include: { exercise: true },
+            },
           },
         },
       },
-    },
+    });
   });
-
-  return plan;
 }
 
 export async function deleteWorkoutPlan(id: string, gymId: string) {
@@ -177,31 +175,25 @@ export async function deleteWorkoutPlan(id: string, gymId: string) {
   return true;
 }
 
-export async function assignWorkoutPlan(workoutPlanId: string, memberIds: string[], assignedBy: string) {
-  // Deactivate existing active assignments for these members
-  await prisma.memberWorkoutAssignment.updateMany({
-    where: {
-      memberId: { in: memberIds },
-      isActive: true,
-    },
-    data: { isActive: false },
+export async function assignWorkoutPlan(workoutPlanId: string, memberIds: string[], assignedBy: string, gymId: string) {
+  if (!Array.isArray(memberIds) || memberIds.length === 0) throw new Error('Select at least one member');
+  const uniqueMemberIds = [...new Set(memberIds)];
+  const [plan, memberCount] = await Promise.all([
+    prisma.workoutPlan.findFirst({ where: { id: workoutPlanId, gymId }, select: { id: true } }),
+    prisma.member.count({ where: { id: { in: uniqueMemberIds }, gymId } }),
+  ]);
+  if (!plan) throw new Error('Workout plan not found');
+  if (memberCount !== uniqueMemberIds.length) throw new Error('One or more members do not belong to this gym');
+
+  return prisma.$transaction(async (tx) => {
+    await tx.memberWorkoutAssignment.updateMany({
+      where: { memberId: { in: uniqueMemberIds }, isActive: true },
+      data: { isActive: false },
+    });
+    return Promise.all(uniqueMemberIds.map((memberId) => tx.memberWorkoutAssignment.create({
+      data: { memberId, workoutPlanId, assignedBy, isActive: true },
+    })));
   });
-
-  // Create new assignments for all members
-  const assignments = await prisma.$transaction(
-    memberIds.map((memberId) =>
-      prisma.memberWorkoutAssignment.create({
-        data: {
-          memberId,
-          workoutPlanId,
-          assignedBy,
-          isActive: true,
-        },
-      }),
-    ),
-  );
-
-  return assignments;
 }
 
 export async function getExercises(search?: string, muscleGroup?: string) {

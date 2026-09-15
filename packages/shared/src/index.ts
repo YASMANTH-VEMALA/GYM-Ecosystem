@@ -9,6 +9,7 @@ export * from './types/diet';
 export * from './types/notification';
 export * from './constants/roles';
 export * from './constants/permissions';
+export * from './constants/portal-sections';
 export * from './constants/plans';
 export * from './validation/member';
 export * from './validation/payment';

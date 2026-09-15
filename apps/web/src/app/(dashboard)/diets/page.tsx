@@ -71,7 +71,7 @@ export default function DietsPage() {
 
   const { data: charts, isLoading } = useQuery({
     queryKey: ['diet-charts'],
-    queryFn: () => apiClient.get('/diets').then((r) => r.data),
+    queryFn: () => apiClient.get('/diets').then((r) => r.data.charts),
   });
 
   const deleteMutation = useMutation({

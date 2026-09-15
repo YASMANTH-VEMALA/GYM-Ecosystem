@@ -11,7 +11,9 @@
     "lint": "dotenv -- turbo lint",
     "db:generate": "dotenv -- turbo db:generate",
     "db:push": "dotenv -- turbo db:push",
+    "db:migrate:deploy": "dotenv -- npm run db:migrate:deploy --workspace=@gymstack/db",
     "db:seed": "dotenv -- turbo db:seed",
+    "bootstrap:owner": "dotenv -- npm run bootstrap:owner --workspace=api",
     "api:dev": "dotenv -- turbo dev --filter=api",
     "web:dev": "dotenv -- turbo dev --filter=web"
   },
@@ -22,5 +24,8 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "packageManager": "npm@10.0.0"
+  "packageManager": "npm@10.0.0",
+  "dependencies": {
+    "@prisma/client": "^6.12.0"
+  }
 }

@@ -1,13 +1,16 @@
 import { Router, Request, Response } from 'express';
-import { authenticate, requireRole } from '../middleware/auth';
+import { authenticate, requireManagerSection, requireRole } from '../middleware/auth';
 import { gymContext } from '../middleware/gym-context';
 import * as planService from '../services/plan.service';
 import { requireString } from '../utils/request';
+import { createPlanSchema } from '@gymstack/shared';
+import { validate } from '../middleware/validate';
 
 const router = Router();
 router.use(authenticate, gymContext);
+router.use(requireManagerSection('plans'));
 
-router.get('/', requireRole('gym_owner', 'receptionist'), async (req: Request, res: Response) => {
+router.get('/', requireRole('gym_owner', 'manager', 'receptionist'), async (req: Request, res: Response) => {
   try {
     const plans = await planService.getPlans(req.gymId!);
     res.json({ plans });
@@ -16,7 +19,7 @@ router.get('/', requireRole('gym_owner', 'receptionist'), async (req: Request, r
   }
 });
 
-router.get('/:id', requireRole('gym_owner'), async (req: Request, res: Response) => {
+router.get('/:id', requireRole('gym_owner', 'manager'), async (req: Request, res: Response) => {
   try {
     const planId = requireString(req.params.id, 'id');
     const plan = await planService.getPlanById(planId, req.gymId!);
@@ -26,7 +29,7 @@ router.get('/:id', requireRole('gym_owner'), async (req: Request, res: Response)
   }
 });
 
-router.post('/', requireRole('gym_owner'), async (req: Request, res: Response) => {
+router.post('/', requireRole('gym_owner', 'manager'), validate(createPlanSchema), async (req: Request, res: Response) => {
   try {
     const plan = await planService.createPlan(req.gymId!, req.body);
     res.status(201).json({ plan });
@@ -35,7 +38,7 @@ router.post('/', requireRole('gym_owner'), async (req: Request, res: Response) =
   }
 });
 
-router.put('/:id', requireRole('gym_owner'), async (req: Request, res: Response) => {
+router.put('/:id', requireRole('gym_owner', 'manager'), validate(createPlanSchema.partial()), async (req: Request, res: Response) => {
   try {
     const planId = requireString(req.params.id, 'id');
     const plan = await planService.updatePlan(planId, req.gymId!, req.body);
@@ -45,7 +48,7 @@ router.put('/:id', requireRole('gym_owner'), async (req: Request, res: Response)
   }
 });
 
-router.patch('/:id/toggle', requireRole('gym_owner'), async (req: Request, res: Response) => {
+router.patch('/:id/toggle', requireRole('gym_owner', 'manager'), async (req: Request, res: Response) => {
   try {
     const planId = requireString(req.params.id, 'id');
     const plan = await planService.togglePlanStatus(planId, req.gymId!);
@@ -55,7 +58,7 @@ router.patch('/:id/toggle', requireRole('gym_owner'), async (req: Request, res: 
   }
 });
 
-router.delete('/:id', requireRole('gym_owner'), async (req: Request, res: Response) => {
+router.delete('/:id', requireRole('gym_owner', 'manager'), async (req: Request, res: Response) => {
   try {
     const planId = requireString(req.params.id, 'id');
     await planService.deletePlan(planId, req.gymId!);

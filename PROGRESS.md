@@ -1,39 +1,45 @@
-# PROGRESS
+# Progress
 
-# Completed
-- [x] Project infrastructure setup (Turborepo, Docker Compose, Prisma)
-- [x] Database Schema design and migrations
-- [x] API framework (Express), authentication, routing, and role middleware
-- [x] Check-ins Page — Dual source kiosk/mobile attendance with real-time UI
-- [x] Analytics Dashboard — Revenue, attendance, and member churn tracking
-- [x] Staff Management — Full CRUD operations for coaches and receptionists
-- [x] Settings Page — Gym profile, white-label color application, and QR code access
-- [x] Foundational Design System implementations in Tailwind CSS
+## Completed
 
-# In Progress
-- [~] Member Management/Dashboard — Basic routing/scaffolding done, requires final UI refinement per `DESIGN_SYSTEM.md`.
-- [~] Diet & Workout trackings — Schema and API ready, frontend pages need final assembly and data integration.
+- [x] Supabase PostgreSQL reset and committed Prisma migration baseline
+- [x] Supabase Auth integration for owner, staff, and members
+- [x] Tenant and role authorization in the API
+- [x] Mock data removed from every Next.js page
+- [x] Dashboard, analytics, members, attendance, fees, payments, plans, workouts, diets, notifications, staff, settings, kiosk, and member web app connected to real APIs
+- [x] Member workout and diet assignments visible in the member web app
+- [x] Resend immediate, scheduled, and automated email notifications with database logs
+- [x] Persistent, rotatable gym QR secret
+- [x] Supabase REST roles blocked from direct Prisma table access
+- [x] Database-backed API health check and graceful shutdown
+- [x] Render and Vercel deployment configuration
+- [x] Production API and web builds passing
+- [x] Production dependency audit reports zero known vulnerabilities
+- [x] Disposable authenticated API smoke test passed 29 checks, including branch isolation and manager RBAC, and cleaned up all test records
+- [x] Permanent K5 gym and Supabase Auth owner bootstrapped with slug `k5`
+- [x] Permanent owner login verified through the API and the real browser dashboard
+- [x] Organization and multi-branch database migration applied without losing K5 data
+- [x] Owner all-branches command center, branch creator, and branch switcher
+- [x] Branch-scoped manager role with Staff, Settings, and All Branches kept owner-only
+- [x] Owner-configurable manager portal section access with creation/edit checkboxes and server enforcement
+- [x] Searchable, filterable, paginated payment history with filtered CSV export
+- [x] Branch-specific admission QR with production API validation, self-service member form, and direct branch assignment
+- [x] Branch-specific attendance QR with authenticated member confirmation and manager-accessible QR downloads
+- [x] Organization-wide and per-branch Supabase Storage logo uploads with branch override/company fallback
+- [x] Installed member PWA Web Push subscriptions, background alerts, click routing, and Email/Push/Both delivery
+- [x] Notification recipient checklist, payment-due audience filters, exact bulk selection, and draggable personalized merge tags
+- [x] Member alert history restricted to successful deliveries, with provider failure reasons visible to admins
 
-# Not Started
-- [ ] Payments Integration — Razorpay integration for online fee payment (P2)
-- [ ] Workout Modules / Planner UI complete implementation (P2)
-- [ ] Superadmin Dashboard for onboarding Gym Tenants (P3)
-- [ ] Cloud Storage Integration — S3/Cloudflare R2 for Gym logos and Member Avatars (P2)
-- [ ] End-to-end Mobile App Polish — Ensuring all pages on Flutter match UI guidelines perfectly (P1)
+## Website release setup
 
-# Demo Readiness
-To show this app to a gym owner tomorrow, our focus must strictly be on the UI presentation layer over backend completeness.
+- [ ] Rotate all credentials that were pasted into chat before hosting
+- [ ] Verify a sending domain in Resend and set `RESEND_FROM_EMAIL`
+- [ ] Deploy the API through `render.yaml`
+- [ ] Deploy the web workspace through `vercel.json`
 
-**P1 (Must have for demo):**
-- Implement the UI exclusively using mock data from `apps/web/src/lib/mock-data.ts` to guarantee a fast, predictable demo.
-- Polish the Web Dashboard (`/dashboard`) layout, ensuring `Geist` font, strict spacing, and exact colors detailed in `DESIGN_SYSTEM.md`.
-- Polish the Mobile PWA demo (`/member-app`), rigidly utilizing the dark theme, `#E85D04` accent, and completely removing load spinners in favor of skeleton loading.
-- Ensure the Kiosk interface (`/kiosk`) is a premium fullscreen dark #0A0A0A experience.
+## Deferred by scope
 
-**P2 (Nice to have):**
-- Working payment gateway visual flow (can be mocked without real transactions).
-- Working file uploads for logos (can be mocked).
-
-**P3 (Build after first client):**
-- Superadmin Portal.
-- Complex analytics pipelines.
+- [ ] Flutter/mobile app real-data conversion and store release
+- [ ] Razorpay live activation
+- [ ] Supabase Storage uploads for avatars and invoice PDFs (logo uploads are complete)
+- [ ] Superadmin onboarding portal

@@ -3,9 +3,29 @@
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { Plus, Search, Users, Filter, Download, ChevronRight } from 'lucide-react';
-import { MOCK_MEMBERS } from '@/lib/mock-data';
+import { useQuery } from '@tanstack/react-query';
+import apiClient from '@/lib/api-client';
 
 type FilterStatus = 'all' | 'active' | 'expiring' | 'expired';
+
+type ApiMember = {
+  id: string;
+  memberCode: string;
+  user: { name: string; phone: string; email: string | null; avatarUrl: string | null };
+  subscriptions: Array<{ endDate: string; status: string; plan: { name: string } }>;
+  _count: { checkIns: number };
+};
+
+type MemberRow = {
+  id: string;
+  memberCode: string;
+  name: string;
+  phone: string;
+  plan: string;
+  planEnd: string | null;
+  status: Exclude<FilterStatus, 'all'>;
+  totalVisits: number;
+};
 
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -14,9 +34,30 @@ function formatDate(value: string) {
 export default function MembersPage() {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['members'],
+    queryFn: () => apiClient.get<{ members: ApiMember[]; total: number }>('/members', { params: { limit: 500 } }).then((response) => response.data),
+  });
+
+  const members = useMemo<MemberRow[]>(() => (data?.members ?? []).map((member) => {
+    const subscription = member.subscriptions[0];
+    const endDate = subscription?.endDate ? new Date(subscription.endDate) : null;
+    const daysLeft = endDate ? Math.ceil((endDate.getTime() - Date.now()) / 86400000) : -1;
+    const status: MemberRow['status'] = !subscription || daysLeft < 0 ? 'expired' : daysLeft <= 7 ? 'expiring' : 'active';
+    return {
+      id: member.id,
+      memberCode: member.memberCode,
+      name: member.user.name,
+      phone: member.user.phone,
+      plan: subscription?.plan.name ?? 'No active plan',
+      planEnd: subscription?.endDate ?? null,
+      status,
+      totalVisits: member._count.checkIns,
+    };
+  }), [data]);
 
   const filtered = useMemo(() => {
-    let list = MOCK_MEMBERS;
+    let list = members;
 
     if (filterStatus !== 'all') {
       list = list.filter((m) => m.status === filterStatus);
@@ -33,14 +74,25 @@ export default function MembersPage() {
     }
 
     return list;
-  }, [search, filterStatus]);
+  }, [members, search, filterStatus]);
 
   const counts = useMemo(() => ({
-    total: MOCK_MEMBERS.length,
-    active: MOCK_MEMBERS.filter(m => m.status === 'active').length,
-    expiring: MOCK_MEMBERS.filter(m => m.status === 'expiring').length,
-    expired: MOCK_MEMBERS.filter(m => m.status === 'expired').length,
-  }), []);
+    total: members.length,
+    active: members.filter(m => m.status === 'active').length,
+    expiring: members.filter(m => m.status === 'expiring').length,
+    expired: members.filter(m => m.status === 'expired').length,
+  }), [members]);
+
+  const exportCsv = () => {
+    const rows = [['Member Code', 'Name', 'Phone', 'Plan', 'Expiry', 'Status'], ...filtered.map((member) => [member.memberCode, member.name, member.phone, member.plan, member.planEnd ?? '', member.status])];
+    const blob = new Blob([rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `members-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="space-y-8">
@@ -53,7 +105,7 @@ export default function MembersPage() {
           </p>
         </div>
         <div className="flex gap-3">
-          <button className="btn btn-secondary">
+          <button className="btn btn-secondary" onClick={exportCsv} disabled={filtered.length === 0}>
             <Download size={16} strokeWidth={1.5} />
             Export CSV
           </button>
@@ -111,7 +163,11 @@ export default function MembersPage() {
       </div>
 
       {/* Table */}
-      {filtered.length === 0 ? (
+      {isLoading ? (
+        <div className="card space-y-3">{Array.from({ length: 5 }).map((_, index) => <div key={index} className="h-12 rounded bg-gray-100 animate-pulse" />)}</div>
+      ) : isError ? (
+        <div className="card empty-state"><p className="empty-state-title">Could not load members</p><button className="btn btn-primary" onClick={() => refetch()}>Retry</button></div>
+      ) : filtered.length === 0 ? (
         <div className="card">
           <div className="empty-state">
             <Users className="empty-state-icon" />
@@ -165,7 +221,7 @@ export default function MembersPage() {
                     </td>
                     <td className="px-4 text-table-row text-text-secondary">{m.phone}</td>
                     <td className="px-4 text-table-row text-text-secondary">{m.plan}</td>
-                    <td className="px-4 text-table-row text-text-secondary">{formatDate(m.planEnd)}</td>
+                    <td className="px-4 text-table-row text-text-secondary">{m.planEnd ? formatDate(m.planEnd) : '—'}</td>
                     <td className="px-4">
                       <span className={`badge ${
                         m.status === 'active' ? 'badge-active' :

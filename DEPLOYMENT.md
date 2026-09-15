@@ -1,153 +1,99 @@
-# Deployment Guide
+# Production deployment
 
-This repo is split into three deployable surfaces:
+The supported first production layout is:
 
-- `apps/api`: Express + Prisma backend
-- `apps/web`: Next.js admin panel, kiosk, and member web app
-- `apps/mobile`: Flutter native member app
+- Web/admin/kiosk/member app: Vercel
+- Express API and scheduled email jobs: Render Starter (always on)
+- PostgreSQL and authentication: Supabase
+- Transactional and campaign email: Resend
 
-## 1. Prerequisites
+Railway can also run the API, but Render is the recommended first deployment because this repository includes a complete `render.yaml`, a pre-deploy migration command, and a database-backed health check.
 
-You need:
+## Security before deployment
 
-- Node.js 20+
-- npm 10+
-- Flutter 3.2+
-- PostgreSQL
-- Redis
-- A production secret set for JWT
+Rotate every credential that was ever pasted into chat before production. Rotate the Supabase database password/service secret, Resend key, Upstash token, Google client secret, and QR encryption key. Never put server secrets in Vercel variables beginning with `NEXT_PUBLIC_`.
 
-Use `.env.example` as the baseline for required variables.
+Supabase browser roles have no direct access to application tables. All application data goes through the authenticated API. The Vercel app receives only the Supabase URL and publishable key.
 
-## 2. Production Environment Variables
+## 1. Database
 
-Set these before deploying:
-
-- `DATABASE_URL`
-- `JWT_SECRET`
-- `JWT_EXPIRES_IN`
-- `WEB_URL`
-- `API_URL`
-- `PLATFORM_DOMAIN`
-- `RAZORPAY_KEY_ID`
-- `RAZORPAY_KEY_SECRET`
-- `FIREBASE_*`
-- `WATI_API_URL`
-- `WATI_API_KEY`
-- `MSG91_AUTH_KEY`
-- `MSG91_SENDER_ID`
-- `MSG91_OTP_TEMPLATE_ID`
-- `R2_*` if file uploads are enabled
-
-## 3. Database
-
-Use the hosted PostgreSQL instance for production.
-
-Suggested flow:
+Apply committed migrations and seed reference data:
 
 ```bash
-npm install
-npm run db:push
+npm ci
+npm run db:generate
+npm run db:migrate:deploy
 npm run db:seed
 ```
 
-If you want migrations instead of push, generate and apply Prisma migrations in `packages/db`.
+The seed is idempotent and creates only the exercise catalog and SaaS plan definitions. It does not create fake gym activity.
 
-## 4. API Deployment
+Create the first gym owner once, from a trusted local terminal:
 
-Deploy `apps/api` to Railway, Render, Fly.io, or any Node host.
-
-Recommended build/start commands:
-
-```bash
-npm run build --workspace=api
-npm run start --workspace=api
+```powershell
+$env:BOOTSTRAP_OWNER_EMAIL='owner@example.com'
+$env:BOOTSTRAP_OWNER_NAME='Owner Name'
+$env:BOOTSTRAP_OWNER_PHONE='9876543210'
+$env:BOOTSTRAP_GYM_NAME='Example Fitness'
+$env:BOOTSTRAP_GYM_SLUG='example-fitness'
+npm run bootstrap:owner
 ```
 
-Make sure the runtime has:
+The command generates a strong temporary password when one is not supplied. Do not add the bootstrap values to a hosted service.
 
-- `DATABASE_URL`
-- `JWT_SECRET`
-- Redis access if any background jobs or rate limiting depend on it
+## 2. Render API
 
-## 5. Web, Kiosk, and Member Web App
+Create a Render Blueprint from this repository. The checked-in `render.yaml` uses a paid Starter web service because sleeping/free instances do not reliably run in-process scheduled jobs.
 
-Deploy `apps/web` to Vercel.
+Set these secret environment variables in Render:
 
-These are all served from the same Next.js app:
+- `DATABASE_URL`: Supabase pooled URL (port 6543)
+- `DIRECT_URL`: Supabase session/direct URL (port 5432), used by migrations
+- `SUPABASE_URL`
+- `SUPABASE_SECRET_KEY`
+- `SUPABASE_LOGO_BUCKET` (optional; defaults to `gymstack-logos` and is created on first upload)
+- `QR_ENCRYPTION_KEY`: at least 32 random characters
+- `RESEND_API_KEY`
+- `RESEND_FROM_EMAIL`: an address on a domain verified in Resend
+- `WEB_PUSH_VAPID_PUBLIC_KEY` and `WEB_PUSH_VAPID_PRIVATE_KEY`: one persistent pair generated with `npx web-push generate-vapid-keys`
+- `WEB_PUSH_VAPID_SUBJECT`: a `mailto:` address on your support domain
+- `WEB_URL`: final Vercel origin, such as `https://gymos.example.com`
 
-- Admin dashboard: `/dashboard`
-- Kiosk: `/kiosk`
-- Member web app: `/member-app`
+Do not copy a local Windows `sslrootcert=C:/...` parameter into Render. Use Supabase's cloud connection string with `sslmode=require`, or mount the CA certificate and provide a valid Linux path.
 
-Important production env values on Vercel:
+Keep exactly one API instance while cron jobs run inside the web process. If the API is scaled horizontally, move schedules to one dedicated worker and set `ENABLE_CRON_JOBS=false` on web instances.
 
-- `API_URL` pointing to the deployed API
-- `WEB_URL` pointing to the deployed web domain
-- `PLATFORM_DOMAIN` for tenant-aware routing if used
+Verify `GET https://YOUR-RENDER-SERVICE.onrender.com/api/health`. It must report both `status: ok` and `database: connected`.
 
-Build command:
+## 3. Vercel web app
 
-```bash
-npm run build --workspace=web
-```
+Import the repository into Vercel and keep the repository root as the project root. `vercel.json` builds the `web` workspace.
 
-Start command for a self-hosted deployment:
+Set:
 
-```bash
-npm run start --workspace=web
-```
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- `API_URL`: Render service origin without a trailing `/api`
 
-### Kiosk notes
+Do not set `NEXT_PUBLIC_API_URL` in production. The browser should call same-origin `/api/*`; Next.js proxies those requests to `API_URL`.
 
-- Open `/kiosk` in fullscreen on the reception tablet.
-- Use a dedicated browser profile or pinned PWA if possible.
-- Keep the tablet logged in and disable sleep while in kiosk mode.
+After changing any Vercel environment variable, redeploy the web project.
 
-### Member web app notes
+## 4. Resend
 
-- Serve `/member-app` as the mobile web companion.
-- If you need installable behavior, confirm the PWA manifest and service worker are live in production.
+Verify a sending domain in Resend and use that domain in `RESEND_FROM_EMAIL`. Resend's onboarding address is appropriate only for initial testing. Scheduled emails are claimed atomically and processed once per minute by the API worker.
 
-## 6. Mobile App Deployment
+## 5. Release checks
 
-Deploy `apps/mobile` separately through Flutter release channels.
+- Owner login succeeds through Supabase Auth.
+- `/api/health` confirms the database connection.
+- Gym settings persist after a refresh.
+- A member can be created with an email and temporary password.
+- An installed member PWA can enable notifications and receive a push after the app is closed.
+- Cash/UPI collection creates a real subscription and payment record.
+- Kiosk check-in appears in attendance and analytics.
+- Workout and diet plans can be assigned and appear in the member web app.
+- A test Resend email is marked `delivered` in notification history.
+- Old QR codes fail after regenerating the gym QR.
 
-Common build commands:
-
-```bash
-cd apps/mobile
-flutter pub get
-flutter build apk
-flutter build appbundle
-```
-
-For iOS:
-
-```bash
-flutter build ipa
-```
-
-Typical release path:
-
-- Android: upload the AAB to Google Play Console
-- iOS: upload the IPA to TestFlight/App Store Connect
-
-Make sure Firebase, API base URLs, and any platform-specific signing settings are configured before building.
-
-## 7. Recommended Release Order
-
-1. Deploy the API.
-2. Run database setup against production.
-3. Deploy the web app.
-4. Verify `/dashboard`, `/kiosk`, and `/member-app`.
-5. Build and publish the mobile app.
-
-## 8. Quick Verification Checklist
-
-- Login works on web.
-- Member list and detail routes load.
-- Check-in flow works in `/kiosk`.
-- QR scan and member app routes work.
-- Mobile app can authenticate and hit the production API.
-- Background jobs run on schedule.
+The Flutter app is outside the website-first release and can be deployed later.

@@ -1,5 +1,6 @@
 import prisma from '@gymstack/db';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '@gymstack/db';
+import type { PaymentHistoryQuery } from '@gymstack/shared';
 import { generateInvoicePdf } from '../utils/gst-invoice';
 
 async function getNextInvoiceNumber(gymId: string): Promise<string> {
@@ -31,6 +32,14 @@ export async function collectPayment(gymId: string, data: {
   });
   if (!member) throw new Error('Member not found');
 
+  if (data.subscriptionId) {
+    const subscription = await prisma.memberSubscription.findFirst({
+      where: { id: data.subscriptionId, gymId, memberId: data.memberId },
+      select: { id: true },
+    });
+    if (!subscription) throw new Error('Subscription not found for this member');
+  }
+
   const gym = await prisma.gym.findUnique({ where: { id: gymId } });
   if (!gym) throw new Error('Gym not found');
 
@@ -59,16 +68,21 @@ export async function collectPayment(gymId: string, data: {
   });
 
   // Generate invoice PDF
-  const pdfBuffer = await generateInvoicePdf({
-    invoiceNumber,
-    gym: { name: gym.name, address: gym.address || '', gstin: gym.gstin || '' },
-    member: { name: member.user.name, phone: member.user.phone, memberCode: member.memberCode },
-    baseAmount,
-    gstAmount,
-    totalAmount: data.amount,
-    paymentMethod: data.paymentMethod,
-    paidAt: payment.paidAt,
-  });
+  let pdfBuffer: Buffer | null = null;
+  try {
+    pdfBuffer = await generateInvoicePdf({
+      invoiceNumber,
+      gym: { name: gym.name, address: gym.address || '', gstin: gym.gstin || '' },
+      member: { name: member.user.name, phone: member.user.phone, memberCode: member.memberCode },
+      baseAmount,
+      gstAmount,
+      totalAmount: data.amount,
+      paymentMethod: data.paymentMethod,
+      paidAt: payment.paidAt,
+    });
+  } catch (error) {
+    console.error(`Invoice PDF generation failed for payment ${payment.id}:`, (error as Error).message);
+  }
 
   // TODO: Upload PDF to R2 and update payment.invoiceUrl
 
@@ -114,6 +128,8 @@ export async function createSubscription(gymId: string, data: {
 }) {
   const plan = await prisma.membershipPlan.findFirst({ where: { id: data.planId, gymId } });
   if (!plan) throw new Error('Plan not found');
+  const member = await prisma.member.findFirst({ where: { id: data.memberId, gymId }, select: { id: true } });
+  if (!member) throw new Error('Member not found');
 
   const startDate = new Date(data.startDate);
   const endDate = new Date(startDate);
@@ -122,22 +138,22 @@ export async function createSubscription(gymId: string, data: {
   const totalAmount = Number(plan.price);
   const gstAmount = Math.round((totalAmount * Number(plan.gstPercent)) / (100 + Number(plan.gstPercent)) * 100) / 100;
 
-  // Deactivate any current active subscription
-  await prisma.memberSubscription.updateMany({
-    where: { memberId: data.memberId, status: 'active' },
-    data: { status: 'expired' },
-  });
-
-  const subscription = await prisma.memberSubscription.create({
-    data: {
-      memberId: data.memberId,
-      planId: data.planId,
-      gymId,
-      startDate,
-      endDate,
-      status: 'active',
-      amountPaid: totalAmount,
-    },
+  const subscription = await prisma.$transaction(async (tx) => {
+    await tx.memberSubscription.updateMany({
+      where: { memberId: data.memberId, gymId, status: 'active' },
+      data: { status: 'expired' },
+    });
+    return tx.memberSubscription.create({
+      data: {
+        memberId: data.memberId,
+        planId: data.planId,
+        gymId,
+        startDate,
+        endDate,
+        status: 'active',
+        amountPaid: totalAmount,
+      },
+    });
   });
 
   // Collect payment
@@ -152,41 +168,71 @@ export async function createSubscription(gymId: string, data: {
   return { subscription, payment: paymentResult.payment, invoiceUrl: null };
 }
 
-export async function getPayments(gymId: string, options: {
-  memberId?: string;
-  from?: string;
-  to?: string;
-  method?: string;
-  page?: number;
-  limit?: number;
-}) {
-  const { memberId, from, to, method, page = 1, limit = 20 } = options;
-  const skip = (page - 1) * limit;
-
+function paymentHistoryWhere(gymId: string, options: Omit<PaymentHistoryQuery, 'page' | 'limit'>) {
+  const { memberId, search, from, to, method } = options;
   const where: Prisma.PaymentWhereInput = { gymId };
+
   if (memberId) where.memberId = memberId;
   if (method) where.paymentMethod = method;
   if (from || to) {
     const paidAt: Prisma.DateTimeFilter = {};
-    if (from) paidAt.gte = new Date(from);
-    if (to) paidAt.lte = new Date(to);
+    if (from) paidAt.gte = new Date(`${from}T00:00:00.000+05:30`);
+    if (to) paidAt.lte = new Date(`${to}T23:59:59.999+05:30`);
     where.paidAt = paidAt;
   }
+  if (search) {
+    where.OR = [
+      { invoiceNumber: { contains: search, mode: 'insensitive' } },
+      { member: { memberCode: { contains: search, mode: 'insensitive' } } },
+      { member: { user: { name: { contains: search, mode: 'insensitive' } } } },
+      { member: { user: { phone: { contains: search } } } },
+    ];
+  }
 
-  const [payments, total] = await Promise.all([
+  return where;
+}
+
+const paymentHistoryInclude = {
+  member: { include: { user: { select: { name: true, phone: true } } } },
+  subscription: { include: { plan: { select: { name: true } } } },
+} satisfies Prisma.PaymentInclude;
+
+export async function getPayments(gymId: string, options: PaymentHistoryQuery) {
+  const { page = 1, limit = 20, ...filters } = options;
+  const skip = (page - 1) * limit;
+  const where = paymentHistoryWhere(gymId, filters);
+
+  const [payments, total, aggregate] = await Promise.all([
     prisma.payment.findMany({
       where,
-      include: {
-        member: { include: { user: { select: { name: true } } } },
-      },
+      include: paymentHistoryInclude,
       orderBy: { paidAt: 'desc' },
       skip,
       take: limit,
     }),
     prisma.payment.count({ where }),
+    prisma.payment.aggregate({ where, _sum: { totalAmount: true } }),
   ]);
 
-  return { payments, total, page, limit };
+  return {
+    payments,
+    total,
+    page,
+    limit,
+    totalPages: Math.max(1, Math.ceil(total / limit)),
+    summary: { totalAmount: Number(aggregate._sum.totalAmount ?? 0) },
+  };
+}
+
+export async function getPaymentExportRows(
+  gymId: string,
+  options: Omit<PaymentHistoryQuery, 'page' | 'limit'>,
+) {
+  return prisma.payment.findMany({
+    where: paymentHistoryWhere(gymId, options),
+    include: paymentHistoryInclude,
+    orderBy: { paidAt: 'desc' },
+  });
 }
 
 export async function getDueMembers(gymId: string) {
@@ -207,8 +253,10 @@ export async function getDueMembers(gymId: string) {
   });
 
   return expiringSubs.map((sub) => ({
+    subscriptionId: sub.id,
     memberId: sub.memberId,
     memberName: sub.member.user.name,
+    memberCode: sub.member.memberCode,
     memberPhone: sub.member.user.phone,
     planName: sub.plan.name,
     expiredOn: sub.endDate.toISOString(),

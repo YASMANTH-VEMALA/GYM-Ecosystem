@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import prisma from '@gymstack/db';
-import { sendPlanExpiry } from '../services/whatsapp.service';
+import { sendPlanExpiryEmail } from '../services/email.service';
 
 // Daily 7:00 AM IST — plan expiry warnings and auto-expire
 export function startPlanExpiryJob() {
@@ -40,7 +40,7 @@ export function startPlanExpiryJob() {
                     });
                     if (!alreadySent) {
                         try {
-                            await sendPlanExpiry(sub.memberId, 7);
+                            await sendPlanExpiryEmail(sub.memberId, 7);
                         } catch (err) {
                             console.error(`[CRON] 7-day expiry notification failed:`, (err as Error).message);
                         }
@@ -65,7 +65,7 @@ export function startPlanExpiryJob() {
 
                 for (const sub of oneDaySubs) {
                     try {
-                        await sendPlanExpiry(sub.memberId, 1);
+                        await sendPlanExpiryEmail(sub.memberId, 1);
                     } catch (err) {
                         console.error(`[CRON] 1-day expiry notification failed:`, (err as Error).message);
                     }

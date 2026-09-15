@@ -1,30 +1,31 @@
 import axios from 'axios';
+import { supabase } from './supabase';
 
 const apiClient = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || '/api',
   headers: { 'Content-Type': 'application/json' },
 });
 
-apiClient.interceptors.request.use((config) => {
+apiClient.interceptors.request.use(async (config) => {
   if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('gymstack_token');
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
 
-    const gymSlug = localStorage.getItem('gymstack_slug');
-    if (gymSlug) {
-      config.headers['X-Gym-Slug'] = gymSlug;
-    }
+    const selectedBranchId = window.localStorage.getItem('gymos-branch-id');
+    if (selectedBranchId) config.headers['X-Gym-Id'] = selectedBranchId;
+
   }
   return config;
 });
 
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     if (error.response?.status === 401 && typeof window !== 'undefined') {
-      localStorage.removeItem('gymstack_token');
+      await supabase.auth.signOut();
       window.location.href = '/login';
     }
     return Promise.reject(error);

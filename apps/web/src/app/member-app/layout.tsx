@@ -1,13 +1,13 @@
 import type { Metadata, Viewport } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Iron Paradise Gym — Member App',
+  title: 'GymOS Member App',
   description: 'Your personal gym companion',
   manifest: '/manifest-member.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'Iron Paradise',
+    title: 'GymOS',
   },
   icons: {
     icon: '/icon-192.png',

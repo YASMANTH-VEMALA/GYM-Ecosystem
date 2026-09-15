@@ -1,182 +1,66 @@
 'use client';
 
-// ─── Gym Config Store ──────────────────────────────────────
-// Persisted to localStorage under "gymos_gym_config".
-// Provides a React context so every component can read live config
-// and the Settings page can write to it.
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import apiClient from './api-client';
+import { useAuth } from '@/providers/auth-provider';
 
-import {
-  createContext, useContext, useState, useEffect,
-  useCallback, type ReactNode,
-} from 'react';
-
-// ─── Types ─────────────────────────────────────────────────
-
-export interface GymPlanPrices {
-  silverMonthly: number;
-  goldThreeMonth: number;
-  goldSixMonth: number;
-  platinumAnnual: number;
-}
-
+export interface GymPlanPrices { silverMonthly: number; goldThreeMonth: number; goldSixMonth: number; platinumAnnual: number }
 export interface GymConfig {
-  gymName: string;
-  tagline: string;
-  primaryColor: string;
-  logoInitials: string;
-  logoUrl: string | null;
-  address: string;
-  phone: string;
-  email: string;
-  openTime: string;
-  closeTime: string;
-  memberCount: number;
-  city: string;
-  ownerName: string;
-  coachName: string;
-  whatsappNumber: string;
-  planPrices: GymPlanPrices;
+  branchId: string; gymName: string; tagline: string; primaryColor: string; logoInitials: string; logoUrl: string | null; companyLogoUrl: string | null;
+  address: string; phone: string; email: string; openTime: string; closeTime: string; memberCount: number;
+  city: string; ownerName: string; coachName: string; whatsappNumber: string; planPrices: GymPlanPrices;
 }
-
-// ─── Default Config ────────────────────────────────────────
 
 export const DEFAULT_GYM_CONFIG: GymConfig = {
-  gymName: 'IronPeak Fitness Club',
-  tagline: 'Train Hard. Live Strong.',
-  primaryColor: '#E85D04',
-  logoInitials: 'IP',
-  logoUrl: null,
-  address: '42 Anna Salai, Chennai 600002',
-  phone: '9944556677',
-  email: 'info@ironpeakfitness.in',
-  openTime: '06:00 AM',
-  closeTime: '10:00 PM',
-  memberCount: 247,
-  city: 'Chennai',
-  ownerName: 'Rajesh Menon',
-  coachName: 'Suresh Kumar',
-  whatsappNumber: '9944556677',
-  planPrices: {
-    silverMonthly: 1500,
-    goldThreeMonth: 3600,
-    goldSixMonth: 5400,
-    platinumAnnual: 12000,
-  },
+  branchId: '', gymName: 'GymOS', tagline: '', primaryColor: '#2563EB', logoInitials: 'GO', logoUrl: null, companyLogoUrl: null,
+  address: '', phone: '', email: '', openTime: '06:00 AM', closeTime: '10:00 PM', memberCount: 0,
+  city: '', ownerName: '', coachName: '', whatsappNumber: '',
+  planPrices: { silverMonthly: 0, goldThreeMonth: 0, goldSixMonth: 0, platinumAnnual: 0 },
 };
 
-const STORAGE_KEY = 'gymos_gym_config';
-
-// ─── Persistence helpers ───────────────────────────────────
-
-function readFromStorage(): GymConfig {
-  if (typeof window === 'undefined') return DEFAULT_GYM_CONFIG;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_GYM_CONFIG;
-    const parsed = JSON.parse(raw);
-    // Merge with defaults so new fields always exist
-    return { ...DEFAULT_GYM_CONFIG, ...parsed, planPrices: { ...DEFAULT_GYM_CONFIG.planPrices, ...(parsed.planPrices || {}) } };
-  } catch {
-    return DEFAULT_GYM_CONFIG;
-  }
-}
-
-function writeToStorage(config: GymConfig) {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
-}
-
-// ─── Apply brand color ─────────────────────────────────────
+interface GymConfigContextType { config: GymConfig; updateConfig: (partial: Partial<GymConfig>) => void; saveConfig: () => Promise<void>; resetConfig: () => void; isDirty: boolean; isLoading: boolean }
+const GymConfigContext = createContext<GymConfigContextType | undefined>(undefined);
 
 function applyBrandColor(color: string) {
   if (typeof document === 'undefined') return;
-  const root = document.documentElement;
-  root.style.setProperty('--brand-color', color);
-  root.style.setProperty('--color-primary', color);
-
-  // Compute a darker variant for hover states
+  document.documentElement.style.setProperty('--brand-color', color);
+  document.documentElement.style.setProperty('--color-primary', color);
   const hex = color.replace('#', '');
-  const r = parseInt(hex.substring(0, 2), 16);
-  const g = parseInt(hex.substring(2, 4), 16);
-  const b = parseInt(hex.substring(4, 6), 16);
-
-  root.style.setProperty('--brand-color-rgb', `${r}, ${g}, ${b}`);
-
-  const rDark = Math.max(0, r - 25);
-  const gDark = Math.max(0, g - 25);
-  const bDark = Math.max(0, b - 25);
-  root.style.setProperty(
-    '--color-primary-dark',
-    `#${rDark.toString(16).padStart(2, '0')}${gDark.toString(16).padStart(2, '0')}${bDark.toString(16).padStart(2, '0')}`
-  );
+  const rgb = [0, 2, 4].map((index) => Number.parseInt(hex.slice(index, index + 2), 16));
+  document.documentElement.style.setProperty('--brand-color-rgb', rgb.join(', '));
 }
 
-// ─── Context ───────────────────────────────────────────────
-
-interface GymConfigContextType {
-  config: GymConfig;
-  updateConfig: (partial: Partial<GymConfig>) => void;
-  saveConfig: () => Promise<void>;
-  resetConfig: () => void;
-  isDirty: boolean;
+function fromApi(gym: any, memberCount = 0): GymConfig {
+  const initials = String(gym.name ?? 'GymOS').split(/\s+/).map((part: string) => part[0]).join('').slice(0, 2).toUpperCase();
+  return { ...DEFAULT_GYM_CONFIG, branchId: gym.id, gymName: gym.name, primaryColor: gym.primaryColor, logoInitials: initials, logoUrl: gym.logoUrl, companyLogoUrl: gym.organization?.logoUrl ?? null, address: gym.address ?? '', city: gym.city ?? '', phone: gym.ownerPhone ?? '', email: gym.ownerEmail ?? '', ownerName: gym.ownerName ?? '', whatsappNumber: gym.ownerPhone ?? '', memberCount };
 }
-
-const GymConfigContext = createContext<GymConfigContextType | undefined>(undefined);
-
-// ─── Provider ──────────────────────────────────────────────
 
 export function GymConfigProvider({ children }: { children: ReactNode }) {
-  const [savedConfig, setSavedConfig] = useState<GymConfig>(DEFAULT_GYM_CONFIG);
-  const [config, setConfig] = useState<GymConfig>(DEFAULT_GYM_CONFIG);
-  const [isDirty, setIsDirty] = useState(false);
+  const { user, isLoading: authLoading } = useAuth();
+  const [savedConfig, setSavedConfig] = useState(DEFAULT_GYM_CONFIG);
+  const [config, setConfig] = useState(DEFAULT_GYM_CONFIG);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Load from localStorage on mount
-  useEffect(() => {
-    const stored = readFromStorage();
-    setSavedConfig(stored);
-    setConfig(stored);
-    applyBrandColor(stored.primaryColor);
-  }, []);
+  const load = useCallback(async () => {
+    if (!user || user.role === 'member') { setIsLoading(false); return; }
+    setIsLoading(true);
+    try {
+      const [gymResponse, membersResponse] = await Promise.all([apiClient.get('/gym'), apiClient.get('/members', { params: { limit: 1 } })]);
+      const next = fromApi(gymResponse.data.gym, membersResponse.data.total);
+      setSavedConfig(next); setConfig(next); applyBrandColor(next.primaryColor);
+    } finally { setIsLoading(false); }
+  }, [user]);
 
-  // Track dirty state
-  useEffect(() => {
-    setIsDirty(JSON.stringify(config) !== JSON.stringify(savedConfig));
-  }, [config, savedConfig]);
-
-  // Live-apply brand color whenever it changes
-  useEffect(() => {
-    applyBrandColor(config.primaryColor);
-  }, [config.primaryColor]);
-
-  const updateConfig = useCallback((partial: Partial<GymConfig>) => {
-    setConfig((prev) => ({ ...prev, ...partial }));
-  }, []);
-
+  useEffect(() => { if (!authLoading) load().catch(() => setIsLoading(false)); }, [authLoading, load]);
+  useEffect(() => applyBrandColor(config.primaryColor), [config.primaryColor]);
+  const updateConfig = useCallback((partial: Partial<GymConfig>) => setConfig((current) => ({ ...current, ...partial })), []);
   const saveConfig = useCallback(async () => {
-    // Simulate network delay for realistic feel
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    writeToStorage(config);
-    setSavedConfig(config);
+    const { data } = await apiClient.put('/gym', { name: config.gymName, primaryColor: config.primaryColor, logoUrl: config.logoUrl, address: config.address, city: config.city, ownerName: config.ownerName, ownerPhone: config.phone, ownerEmail: config.email });
+    const next = fromApi(data.gym, config.memberCount); setSavedConfig(next); setConfig(next);
   }, [config]);
+  const resetConfig = useCallback(() => { setConfig(savedConfig); applyBrandColor(savedConfig.primaryColor); }, [savedConfig]);
 
-  const resetConfig = useCallback(() => {
-    setConfig(DEFAULT_GYM_CONFIG);
-    writeToStorage(DEFAULT_GYM_CONFIG);
-    setSavedConfig(DEFAULT_GYM_CONFIG);
-    applyBrandColor(DEFAULT_GYM_CONFIG.primaryColor);
-  }, []);
-
-  return (
-    <GymConfigContext.Provider value={{ config, updateConfig, saveConfig, resetConfig, isDirty }}>
-      {children}
-    </GymConfigContext.Provider>
-  );
+  return <GymConfigContext.Provider value={{ config, updateConfig, saveConfig, resetConfig, isDirty: JSON.stringify(config) !== JSON.stringify(savedConfig), isLoading }}>{children}</GymConfigContext.Provider>;
 }
 
-// ─── Hook ──────────────────────────────────────────────────
-
-export function useGymConfig() {
-  const ctx = useContext(GymConfigContext);
-  if (!ctx) throw new Error('useGymConfig must be used within GymConfigProvider');
-  return ctx;
-}
+export function useGymConfig() { const context = useContext(GymConfigContext); if (!context) throw new Error('useGymConfig must be used within GymConfigProvider'); return context; }

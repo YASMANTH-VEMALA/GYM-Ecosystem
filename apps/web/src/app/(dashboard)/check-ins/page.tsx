@@ -31,7 +31,7 @@ export default function CheckInsPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['check-ins', selectedDate],
     queryFn: () =>
-      apiClient.get('/check-ins/by-date', { params: { date: selectedDate } }).then((r) => r.data),
+      apiClient.get('/checkins/by-date', { params: { date: selectedDate } }).then((r) => r.data),
     refetchInterval: isToday ? 30000 : false,
   });
 

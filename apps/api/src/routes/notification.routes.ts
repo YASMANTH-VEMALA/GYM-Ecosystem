@@ -1,12 +1,65 @@
-import { Router, Request, Response } from 'express';
-import { authenticate, requireRole } from '../middleware/auth';
+import { Router, Request, Response, NextFunction } from 'express';
+import { authenticate, requireManagerSection, requireRole } from '../middleware/auth';
 import { gymContext } from '../middleware/gym-context';
 import * as notificationService from '../services/notification.service';
+import prisma from '@gymstack/db';
+import { z } from 'zod';
+import { validate } from '../middleware/validate';
+
+const notificationSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  body: z.string().trim().min(1).max(5000),
+  channel: z.enum(['email', 'push', 'both']),
+  target: z.enum(['all', 'active', 'expiring_soon', 'overdue', 'payment_due', 'plan', 'individual', 'selected']),
+  targetId: z.string().uuid().optional(),
+  targetIds: z.array(z.string().uuid()).min(1).max(500).optional(),
+  scheduledAt: z.string().datetime({ offset: true }).optional(),
+}).superRefine((value, context) => {
+  if ((value.target === 'plan' || value.target === 'individual') && !value.targetId) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['targetId'], message: 'targetId is required for this target' });
+  }
+  if (value.target === 'selected' && !value.targetIds?.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['targetIds'], message: 'Select at least one member' });
+  }
+});
 
 const router = Router();
 router.use(authenticate, gymContext);
 
-router.get('/', requireRole('gym_owner', 'receptionist'), async (req: Request, res: Response) => {
+function requireNotificationHistoryAccess(req: Request, res: Response, next: NextFunction) {
+  if (req.user?.role === 'manager' && req.query.memberId && req.user.portalSections.includes('members')) {
+    next();
+    return;
+  }
+  requireManagerSection('notifications')(req, res, next);
+}
+
+router.get('/me', requireRole('member'), async (req: Request, res: Response) => {
+  try {
+    const member = await prisma.member.findFirst({ where: { userId: req.user!.userId, gymId: req.gymId! } });
+    if (!member) { res.status(404).json({ error: 'Member profile not found' }); return; }
+    const result = await notificationService.getNotificationHistory(req.gymId!, {
+      memberId: member.id,
+      statuses: ['delivered', 'sent'],
+      page: Number(req.query.page) || 1,
+      limit: Number(req.query.limit) || 50,
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+router.get('/recipients', requireRole('gym_owner', 'manager', 'receptionist'), requireManagerSection('notifications'), async (req: Request, res: Response) => {
+  try {
+    const recipients = await notificationService.getNotificationRecipients(req.gymId!);
+    res.json({ recipients });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+router.get('/', requireRole('gym_owner', 'manager', 'receptionist'), requireNotificationHistoryAccess, async (req: Request, res: Response) => {
   try {
     const result = await notificationService.getNotificationHistory(req.gymId!, {
       page: Number(req.query.page) || 1,
@@ -19,7 +72,7 @@ router.get('/', requireRole('gym_owner', 'receptionist'), async (req: Request, r
   }
 });
 
-router.get('/scheduled', requireRole('gym_owner', 'receptionist'), async (req: Request, res: Response) => {
+router.get('/scheduled', requireRole('gym_owner', 'manager', 'receptionist'), requireManagerSection('notifications'), async (req: Request, res: Response) => {
   try {
     const notifications = await notificationService.getScheduledNotifications(req.gymId!);
     res.json({ notifications });
@@ -28,7 +81,7 @@ router.get('/scheduled', requireRole('gym_owner', 'receptionist'), async (req: R
   }
 });
 
-router.post('/', requireRole('gym_owner', 'receptionist'), async (req: Request, res: Response) => {
+router.post('/', requireRole('gym_owner', 'manager', 'receptionist'), requireManagerSection('notifications'), validate(notificationSchema), async (req: Request, res: Response) => {
   try {
     const result = await notificationService.sendNotification(req.gymId!, req.body);
     res.status(201).json(result);

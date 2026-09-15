@@ -1,5 +1,5 @@
-import { Router, Request, Response } from 'express';
-import { authenticate, requireRole } from '../middleware/auth';
+import { Router, Request, Response, NextFunction } from 'express';
+import { authenticate, requireManagerSection, requireRole } from '../middleware/auth';
 import { gymContext } from '../middleware/gym-context';
 import { validate } from '../middleware/validate';
 import {
@@ -7,6 +7,7 @@ import {
   createPlanSchema,
   createRazorpayOrderSchema,
   createSubscriptionSchema,
+  paymentHistoryQuerySchema,
   verifyRazorpayPaymentSchema,
 } from '@gymstack/shared';
 import * as paymentService from '../services/payment.service';
@@ -16,8 +17,37 @@ import prisma from '@gymstack/db';
 const router = Router();
 router.use(authenticate, gymContext);
 
+function parseHistoryQuery(req: Request, res: Response) {
+  const parsed = paymentHistoryQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'Invalid payment history filters',
+      details: parsed.error.errors.map((issue) => ({
+        field: issue.path.join('.'),
+        message: issue.message,
+      })),
+    });
+    return null;
+  }
+  return parsed.data;
+}
+
+function csvCell(value: unknown) {
+  let text = String(value ?? '');
+  if (/^[=+\-@]/.test(text)) text = `'${text}`;
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function requirePaymentHistoryAccess(req: Request, res: Response, next: NextFunction) {
+  if (req.user?.role === 'manager' && req.query.memberId && req.user.portalSections.includes('members')) {
+    next();
+    return;
+  }
+  requireManagerSection('payments', 'fees')(req, res, next);
+}
+
 // Plans
-router.get('/plans', requireRole('gym_owner', 'receptionist'), async (req: Request, res: Response) => {
+router.get('/plans', requireRole('gym_owner', 'manager', 'receptionist'), requireManagerSection('payments', 'fees'), async (req: Request, res: Response) => {
   try {
     const plans = await prisma.membershipPlan.findMany({
       where: { gymId: req.gymId!, isActive: true },
@@ -41,7 +71,7 @@ router.post('/plans', requireRole('gym_owner'), validate(createPlanSchema), asyn
 });
 
 // Subscriptions
-router.post('/subscriptions', requireRole('gym_owner', 'receptionist'), validate(createSubscriptionSchema), async (req: Request, res: Response) => {
+router.post('/subscriptions', requireRole('gym_owner', 'manager', 'receptionist'), requireManagerSection('payments', 'fees'), validate(createSubscriptionSchema), async (req: Request, res: Response) => {
   try {
     const result = await paymentService.createSubscription(req.gymId!, req.body);
     res.status(201).json(result);
@@ -51,23 +81,47 @@ router.post('/subscriptions', requireRole('gym_owner', 'receptionist'), validate
 });
 
 // Payments
-router.get('/', requireRole('gym_owner', 'receptionist'), async (req: Request, res: Response) => {
+router.get('/export', requireRole('gym_owner', 'manager', 'receptionist'), requireManagerSection('payments', 'fees'), async (req: Request, res: Response) => {
   try {
-    const result = await paymentService.getPayments(req.gymId!, {
-      memberId: req.query.memberId as string,
-      from: req.query.from as string,
-      to: req.query.to as string,
-      method: req.query.method as string,
-      page: Number(req.query.page) || 1,
-      limit: Number(req.query.limit) || 20,
-    });
+    const query = parseHistoryQuery(req, res);
+    if (!query) return;
+    const { page: _page, limit: _limit, ...filters } = query;
+    const payments = await paymentService.getPaymentExportRows(req.gymId!, filters);
+    const rows = payments.map((payment) => [
+      payment.paidAt.toISOString(),
+      payment.member.memberCode,
+      payment.member.user.name,
+      payment.member.user.phone,
+      payment.subscription?.plan.name ?? '',
+      Number(payment.totalAmount).toFixed(2),
+      payment.paymentMethod,
+      payment.paymentStatus,
+      payment.invoiceNumber,
+    ]);
+    const csv = [
+      ['Paid at', 'Member code', 'Member', 'Phone', 'Plan', 'Amount', 'Method', 'Status', 'Invoice'],
+      ...rows,
+    ].map((row) => row.map(csvCell).join(',')).join('\r\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="payments-${new Date().toISOString().slice(0, 10)}.csv"`);
+    res.send(`\uFEFF${csv}`);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+router.get('/', requireRole('gym_owner', 'manager', 'receptionist'), requirePaymentHistoryAccess, async (req: Request, res: Response) => {
+  try {
+    const query = parseHistoryQuery(req, res);
+    if (!query) return;
+    const result = await paymentService.getPayments(req.gymId!, query);
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
 });
 
-router.post('/collect', requireRole('gym_owner', 'receptionist'), validate(collectFeeSchema), async (req: Request, res: Response) => {
+router.post('/collect', requireRole('gym_owner', 'manager', 'receptionist'), requireManagerSection('payments', 'fees'), validate(collectFeeSchema), async (req: Request, res: Response) => {
   try {
     const result = await paymentService.collectPayment(req.gymId!, req.body);
     res.status(201).json({ payment: result.payment, invoiceNumber: result.invoiceNumber });
@@ -76,7 +130,7 @@ router.post('/collect', requireRole('gym_owner', 'receptionist'), validate(colle
   }
 });
 
-router.get('/due', requireRole('gym_owner', 'receptionist'), async (req: Request, res: Response) => {
+router.get('/due', requireRole('gym_owner', 'manager', 'receptionist'), requireManagerSection('payments', 'fees'), async (req: Request, res: Response) => {
   try {
     const members = await paymentService.getDueMembers(req.gymId!);
     res.json({ members });
@@ -85,7 +139,7 @@ router.get('/due', requireRole('gym_owner', 'receptionist'), async (req: Request
   }
 });
 
-router.post('/razorpay/order', requireRole('member', 'gym_owner', 'receptionist'), validate(createRazorpayOrderSchema), async (req: Request, res: Response) => {
+router.post('/razorpay/order', requireRole('member', 'gym_owner', 'manager', 'receptionist'), requireManagerSection('payments', 'fees'), validate(createRazorpayOrderSchema), async (req: Request, res: Response) => {
   try {
     if (req.user?.role !== 'member' && !req.body.memberId) {
       res.status(400).json({ error: 'memberId is required for staff-initiated online payment order' });
@@ -167,7 +221,7 @@ router.post('/razorpay/order', requireRole('member', 'gym_owner', 'receptionist'
   }
 });
 
-router.post('/razorpay/verify', requireRole('member', 'gym_owner', 'receptionist'), validate(verifyRazorpayPaymentSchema), async (req: Request, res: Response) => {
+router.post('/razorpay/verify', requireRole('member', 'gym_owner', 'manager', 'receptionist'), requireManagerSection('payments', 'fees'), validate(verifyRazorpayPaymentSchema), async (req: Request, res: Response) => {
   try {
     const { razorpayOrderId, razorpayPaymentId, razorpaySignature } = req.body;
 

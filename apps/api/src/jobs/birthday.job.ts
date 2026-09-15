@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import prisma from '@gymstack/db';
-import { sendBirthdayWish } from '../services/whatsapp.service';
+import { sendBirthdayEmail } from '../services/email.service';
 
 // Daily 8:00 AM IST — birthday wishes
 export function startBirthdayJob() {
@@ -44,7 +44,7 @@ export function startBirthdayJob() {
 
                     if (!alreadySent) {
                         try {
-                            await sendBirthdayWish(member.id);
+                            await sendBirthdayEmail(member.id);
                         } catch (err) {
                             console.error(`[CRON] Birthday wish failed for member ${member.id}:`, (err as Error).message);
                         }

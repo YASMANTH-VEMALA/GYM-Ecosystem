@@ -1,5 +1,5 @@
 import prisma from '@gymstack/db';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '@gymstack/db';
 import { env } from '../config/env';
 
 // ─── WATI Client ──────────────────────────────────────

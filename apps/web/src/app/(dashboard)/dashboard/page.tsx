@@ -1,321 +1,51 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
-import {
-  Users, CalendarCheck, CreditCard, TrendingUp, UserPlus,
-  ArrowUpRight, ArrowDownRight, Clock, Dumbbell
-} from 'lucide-react';
-import {
-  MOCK_DASHBOARD_STATS, MOCK_MEMBERS, MOCK_TODAY_CHECKINS,
-  MOCK_REVENUE_CHART, MOCK_PLAN_DISTRIBUTION, MOCK_FEES,
-} from '@/lib/mock-data';
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell
-} from 'recharts';
+import { ArrowUpRight, CalendarCheck, CreditCard, Mail, UserPlus, Users } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import apiClient from '@/lib/api-client';
 
-function formatCurrency(amount: number) {
-  return `₹${amount.toLocaleString('en-IN')}`;
-}
+type Overview = {
+  stats: { totalMembers: number; activeMembers: number; newMembersThisMonth: number; todayCheckIns: number; revenueThisMonth: number; overdueMembers: number; expiringSoonMembers: number };
+  recentCheckIns: Array<{ id: string; checkedInAt: string; source: string; member: { id: string; name: string; memberCode: string } }>;
+  recentMembers: Array<{ id: string; name: string; memberCode: string; joinedAt: string; planName: string | null; subscriptionEndDate: string | null }>;
+};
+type Growth = { month: string; newMembers: number; totalMembers: number };
+type PlanPopularity = { planId: string; planName: string; count: number; revenue: number };
 
-function timeAgo(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
+const colors = ['#2563EB', '#16A34A', '#D97706', '#DC2626', '#0891B2', '#9333EA'];
+const money = (amount: number) => `₹${amount.toLocaleString('en-IN')}`;
+const date = (value: string) => new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
 export default function DashboardPage() {
-  const stats = MOCK_DASHBOARD_STATS;
-  const [activeTab, setActiveTab] = useState<'checkins' | 'fees'>('checkins');
+  const overview = useQuery({ queryKey: ['dashboard'], queryFn: () => apiClient.get<Overview>('/analytics/dashboard').then((response) => response.data) });
+  const growth = useQuery({ queryKey: ['analytics', 'growth'], queryFn: () => apiClient.get<{ monthly: Growth[] }>('/analytics/member-growth', { params: { months: 6 } }).then((response) => response.data.monthly) });
+  const plans = useQuery({ queryKey: ['analytics', 'plans'], queryFn: () => apiClient.get<{ plans: PlanPopularity[] }>('/analytics/plan-popularity').then((response) => response.data.plans) });
 
-  const pendingFees = MOCK_FEES.filter(f => f.status === 'due' || f.status === 'overdue');
-  const totalPending = pendingFees.reduce((s, f) => s + f.amount, 0);
+  if (overview.isLoading) return <div className="space-y-6">{Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-28 rounded-card bg-gray-100 animate-pulse" />)}</div>;
+  if (overview.isError || !overview.data) return <div className="card empty-state"><p className="empty-state-title">Dashboard could not be loaded</p><button onClick={() => overview.refetch()} className="btn btn-primary">Retry</button></div>;
 
-  return (
-    <div className="space-y-8">
-      {/* Page header */}
-      <div className="stagger-1">
-        <h1 className="text-page-title text-text-primary">Dashboard</h1>
-        <p className="text-body text-text-secondary mt-2">
-          Real-time overview  •  {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-        </p>
-      </div>
-
-      {/* Stats cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-between-cards stagger-2">
-        <div className="stat-card group">
-          <div className="flex items-center justify-between mb-3">
-            <span className="stat-card-label">Active Members</span>
-            <div className="w-9 h-9 rounded-xl bg-blue-500/10 flex items-center justify-center">
-              <Users size={18} className="text-blue-500" />
-            </div>
-          </div>
-          <p className="stat-card-value">{stats.activeMembers}</p>
-          <div className="flex items-center gap-2 mt-2">
-            <span className="stat-card-trend up"><ArrowUpRight size={14} /> 8%</span>
-            <span className="text-caption text-text-muted">of {stats.totalMembers} total</span>
-          </div>
-        </div>
-
-        <div className="stat-card group">
-          <div className="flex items-center justify-between mb-3">
-            <span className="stat-card-label">Monthly Revenue</span>
-            <div className="w-9 h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-              <CreditCard size={18} className="text-emerald-500" />
-            </div>
-          </div>
-          <p className="stat-card-value font-mono">{formatCurrency(stats.monthlyRevenue)}</p>
-          <div className="flex items-center gap-2 mt-2">
-            <span className="stat-card-trend up"><ArrowUpRight size={14} /> 12%</span>
-            <span className="text-caption text-text-muted">vs last month</span>
-          </div>
-        </div>
-
-        <div className="stat-card group">
-          <div className="flex items-center justify-between mb-3">
-            <span className="stat-card-label">Today Check-ins</span>
-            <div className="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center">
-              <CalendarCheck size={18} className="text-amber-500" />
-            </div>
-          </div>
-          <p className="stat-card-value">{stats.todayCheckIns}</p>
-          <div className="flex items-center gap-2 mt-2">
-            <span className="text-caption text-text-muted">Avg {stats.avgCheckInsPerDay}/day</span>
-          </div>
-        </div>
-
-        <div className="stat-card group">
-          <div className="flex items-center justify-between mb-3">
-            <span className="stat-card-label">New This Month</span>
-            <div className="w-9 h-9 rounded-xl bg-violet-500/10 flex items-center justify-center">
-              <UserPlus size={18} className="text-violet-500" />
-            </div>
-          </div>
-          <p className="stat-card-value">{stats.newThisMonth}</p>
-          <div className="flex items-center gap-2 mt-2">
-            <span className="stat-card-trend up"><ArrowUpRight size={14} /> 3</span>
-            <span className="text-caption text-text-muted">vs last month</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Charts row */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-between-cards stagger-3">
-        {/* Revenue chart */}
-        <div className="xl:col-span-2 card">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-section-heading text-text-primary">Revenue Trend</h2>
-              <p className="text-caption text-text-muted mt-1">Last 6 months collection</p>
-            </div>
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-100">
-              <TrendingUp size={14} className="text-emerald-600" />
-              <span className="text-badge text-emerald-700">+12% growth</span>
-            </div>
-          </div>
-          <div className="h-[240px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={MOCK_REVENUE_CHART} barCategoryGap="25%">
-                <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
-                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#9CA3AF', fontSize: 12 }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#9CA3AF', fontSize: 12 }}
-                  tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
-                <Tooltip
-                  formatter={(value: number) => [formatCurrency(value), 'Revenue']}
-                  contentStyle={{ borderRadius: '12px', border: '1px solid #EBEBEB', boxShadow: '0 4px 12px rgba(0,0,0,0.06)' }}
-                />
-                <Bar dataKey="revenue" fill="url(#revenueGradient)" radius={[6, 6, 0, 0]} />
-                <defs>
-                  <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#8B5CF6" />
-                    <stop offset="100%" stopColor="#6366F1" />
-                  </linearGradient>
-                </defs>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Plan distribution */}
-        <div className="card">
-          <h2 className="text-section-heading text-text-primary mb-1">Plan Distribution</h2>
-          <p className="text-caption text-text-muted mb-4">{stats.totalMembers} total subscriptions</p>
-          <div className="h-[180px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={MOCK_PLAN_DISTRIBUTION}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={50}
-                  outerRadius={80}
-                  dataKey="members"
-                  stroke="none"
-                >
-                  {MOCK_PLAN_DISTRIBUTION.map((entry, idx) => (
-                    <Cell key={idx} fill={entry.color} />
-                  ))}
-                </Pie>
-                  <Tooltip
-                    formatter={(value: number, _: string, props: any) => [value, props?.payload?.name]}
-                  contentStyle={{ borderRadius: '12px', border: '1px solid #EBEBEB', fontSize: '13px' }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="space-y-2 mt-2">
-            {MOCK_PLAN_DISTRIBUTION.map((plan) => (
-              <div key={plan.name} className="flex items-center justify-between text-table-row">
-                <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: plan.color }} />
-                  <span className="text-text-secondary">{plan.name}</span>
-                </div>
-                <span className="text-text-primary font-medium font-mono">{plan.members}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom section — tabs */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-between-cards stagger-4">
-        {/* Recent activity */}
-        <div className="xl:col-span-2 card p-0 overflow-hidden">
-          <div className="px-card-pad py-4 border-b border-divider flex items-center gap-4">
-            <button
-              onClick={() => setActiveTab('checkins')}
-              className={`text-sm font-medium pb-1 border-b-2 transition-colors ${
-                activeTab === 'checkins'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-text-muted hover:text-text-secondary'
-              }`}
-            >
-              Today{"'"}s Check-ins
-            </button>
-            <button
-              onClick={() => setActiveTab('fees')}
-              className={`text-sm font-medium pb-1 border-b-2 transition-colors ${
-                activeTab === 'fees'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-text-muted hover:text-text-secondary'
-              }`}
-            >
-              Pending Fees
-            </button>
-          </div>
-
-          {activeTab === 'checkins' ? (
-            <div className="divide-y divide-divider">
-              {MOCK_TODAY_CHECKINS.map((ci) => (
-                <div key={ci.id} className="px-card-pad py-4 flex items-center justify-between hover:bg-page/50 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <div className="avatar text-badge">{ci.memberName[0]}</div>
-                    <div>
-                      <p className="text-body text-text-primary font-medium">{ci.memberName}</p>
-                      <p className="text-caption text-text-muted font-mono">{ci.memberCode}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <span className={`badge ${ci.source === 'kiosk' ? 'badge-coach' : 'badge-receptionist'}`}>
-                      {ci.source === 'kiosk' ? '🔲 Kiosk' : '📱 Mobile'}
-                    </span>
-                    <p className="text-caption text-text-muted mt-1 flex items-center gap-1 justify-end">
-                      <Clock size={10} /> {timeAgo(ci.checkedInAt)}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="divide-y divide-divider">
-              {pendingFees.map((fee) => (
-                <div key={fee.id} className="px-card-pad py-4 flex items-center justify-between hover:bg-page/50 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <div className="avatar text-badge bg-red-500">{fee.memberName[0]}</div>
-                    <div>
-                      <p className="text-body text-text-primary font-medium">{fee.memberName}</p>
-                      <p className="text-caption text-text-muted">{fee.plan}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-body text-danger font-medium font-mono">{formatCurrency(fee.amount)}</p>
-                    <span className={`badge ${fee.status === 'overdue' ? 'badge-overdue' : 'badge-fee-due'}`}>
-                      {fee.status === 'overdue' ? 'Overdue' : 'Due'}
-                    </span>
-                  </div>
-                </div>
-              ))}
-              <div className="px-card-pad py-3 bg-stat-card flex items-center justify-between">
-                <span className="text-caption text-text-secondary font-medium">Total Pending</span>
-                <span className="text-body text-danger font-medium font-mono">{formatCurrency(totalPending)}</span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Quick actions + at-risk members */}
-        <div className="space-y-between-cards">
-          {/* Quick actions */}
-          <div className="card">
-            <h2 className="text-section-heading text-text-primary mb-4">Quick Actions</h2>
-            <div className="space-y-2">
-              <Link href="/members/new" className="flex items-center gap-3 p-3 rounded-xl hover:bg-stat-card transition-colors group">
-                <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center group-hover:bg-blue-500/20 transition-colors">
-                  <UserPlus size={18} className="text-blue-500" />
-                </div>
-                <div>
-                  <p className="text-body text-text-primary font-medium">Add New Member</p>
-                  <p className="text-caption text-text-muted">Register a new gym member</p>
-                </div>
-              </Link>
-              <Link href="/fees" className="flex items-center gap-3 p-3 rounded-xl hover:bg-stat-card transition-colors group">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center group-hover:bg-emerald-500/20 transition-colors">
-                  <CreditCard size={18} className="text-emerald-500" />
-                </div>
-                <div>
-                  <p className="text-body text-text-primary font-medium">Collect Fees</p>
-                  <p className="text-caption text-text-muted">{pendingFees.length} payments pending</p>
-                </div>
-              </Link>
-              <Link href="/notifications" className="flex items-center gap-3 p-3 rounded-xl hover:bg-stat-card transition-colors group">
-                <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center group-hover:bg-violet-500/20 transition-colors">
-                  <Dumbbell size={18} className="text-violet-500" />
-                </div>
-                <div>
-                  <p className="text-body text-text-primary font-medium">Send Notification</p>
-                  <p className="text-caption text-text-muted">WhatsApp, SMS, or Push</p>
-                </div>
-              </Link>
-            </div>
-          </div>
-
-          {/* At-risk members */}
-          <div className="card">
-            <h2 className="text-section-heading text-text-primary mb-1">At-Risk Members</h2>
-            <p className="text-caption text-text-muted mb-4">Inactive or expiring soon</p>
-            <div className="space-y-3">
-              {MOCK_MEMBERS.filter(m => m.status === 'expired' || m.status === 'expiring').slice(0, 4).map((m) => (
-                <Link key={m.id} href={`/members/${m.id}`} className="flex items-center gap-3 p-2 rounded-lg hover:bg-stat-card transition-colors">
-                  <div className={`avatar text-badge ${m.status === 'expired' ? 'bg-red-500' : 'bg-amber-500'}`}>
-                    {m.name[0]}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-table-row text-text-primary font-medium truncate">{m.name}</p>
-                    <p className="text-caption text-text-muted">{m.plan}</p>
-                  </div>
-                  <span className={`badge ${m.status === 'expired' ? 'badge-expired' : 'badge-expiring'}`}>
-                    {m.status === 'expired' ? 'Expired' : 'Expiring'}
-                  </span>
-                </Link>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+  const stats = overview.data.stats;
+  return <div className="space-y-8">
+    <div><h1 className="text-page-title">Dashboard</h1><p className="text-body text-text-secondary mt-2">Live data · {date(new Date().toISOString())}</p></div>
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-between-cards">
+      {[
+        { label: 'Active Members', value: stats.activeMembers, caption: `${stats.totalMembers} total`, Icon: Users, color: 'text-blue-500' },
+        { label: 'Monthly Revenue', value: money(stats.revenueThisMonth), caption: 'Collected this month', Icon: CreditCard, color: 'text-emerald-500' },
+        { label: 'Today Check-ins', value: stats.todayCheckIns, caption: 'Live attendance', Icon: CalendarCheck, color: 'text-amber-500' },
+        { label: 'New This Month', value: stats.newMembersThisMonth, caption: 'New registrations', Icon: UserPlus, color: 'text-cyan-600' },
+      ].map(({ label, value, caption, Icon, color }) => <div className="stat-card" key={label}><div className="flex justify-between"><span className="stat-card-label">{label}</span><Icon size={18} className={color} /></div><p className="stat-card-value mt-3 font-mono">{value}</p><p className="text-caption text-text-muted mt-2">{caption}</p></div>)}
     </div>
-  );
+
+    <div className="grid grid-cols-1 xl:grid-cols-3 gap-between-cards">
+      <div className="xl:col-span-2 card"><h2 className="text-section-heading">Member Growth</h2><p className="text-caption text-text-muted mt-1 mb-5">Last six months</p><div className="h-60"><ResponsiveContainer width="100%" height="100%"><BarChart data={growth.data ?? []}><CartesianGrid stroke="#F3F4F6" vertical={false} /><XAxis dataKey="month" axisLine={false} tickLine={false} /><YAxis axisLine={false} tickLine={false} /><Tooltip /><Bar dataKey="totalMembers" fill="#2563EB" radius={[6, 6, 0, 0]} /></BarChart></ResponsiveContainer></div></div>
+      <div className="card"><h2 className="text-section-heading">Plan Distribution</h2><p className="text-caption text-text-muted mt-1">Active subscriptions</p><div className="h-44"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={plans.data ?? []} dataKey="count" nameKey="planName" innerRadius={45} outerRadius={75} stroke="none">{(plans.data ?? []).map((plan, index) => <Cell key={plan.planId} fill={colors[index % colors.length]} />)}</Pie><Tooltip /></PieChart></ResponsiveContainer></div><div className="space-y-2">{(plans.data ?? []).map((plan, index) => <div key={plan.planId} className="flex justify-between text-table-row"><span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />{plan.planName}</span><span className="font-mono">{plan.count}</span></div>)}</div></div>
+    </div>
+
+    <div className="grid grid-cols-1 xl:grid-cols-3 gap-between-cards">
+      <div className="xl:col-span-2 card p-0 overflow-hidden"><div className="px-card-pad py-4 border-b border-divider"><h2 className="text-section-heading">Recent Check-ins</h2></div>{overview.data.recentCheckIns.length === 0 ? <div className="empty-state py-12"><CalendarCheck className="empty-state-icon" /><p className="empty-state-title">No check-ins today</p></div> : <div className="divide-y divide-divider">{overview.data.recentCheckIns.map((item) => <div key={item.id} className="px-card-pad py-4 flex items-center justify-between"><div className="flex items-center gap-3"><div className="avatar">{item.member.name[0]}</div><div><Link href={`/members/${item.member.id}`} className="text-body font-medium">{item.member.name}</Link><p className="text-caption text-text-muted font-mono">{item.member.memberCode}</p></div></div><div className="text-right"><span className="badge badge-active">{item.source}</span><p className="text-caption text-text-muted mt-1">{new Date(item.checkedInAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p></div></div>)}</div>}</div>
+      <div className="space-y-between-cards"><div className="card"><h2 className="text-section-heading mb-4">Quick Actions</h2><div className="space-y-2">{[[`/members/new`, 'Add member', UserPlus], ['/payments/collect', 'Collect fee', CreditCard], ['/notifications', 'Send email', Mail]].map(([href, label, Icon]) => <Link key={String(href)} href={String(href)} className="flex items-center gap-3 p-3 rounded-xl hover:bg-stat-card"><Icon size={18} className="text-primary" /><span className="text-body font-medium">{String(label)}</span><ArrowUpRight size={14} className="ml-auto text-text-muted" /></Link>)}</div></div><div className="card"><h2 className="text-section-heading">Attention Needed</h2><div className="grid grid-cols-2 gap-3 mt-4"><Link href="/fees" className="stat-card"><p className="text-2xl text-danger font-mono">{stats.overdueMembers}</p><p className="text-caption text-text-muted">Overdue</p></Link><Link href="/members" className="stat-card"><p className="text-2xl text-warning font-mono">{stats.expiringSoonMembers}</p><p className="text-caption text-text-muted">Expiring</p></Link></div></div></div>
+    </div>
+  </div>;
 }

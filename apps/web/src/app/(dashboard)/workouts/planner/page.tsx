@@ -18,7 +18,7 @@ type WorkoutPlanSummary = {
 export default function CoachWorkoutPlannerPage() {
   const { data: plans, isLoading } = useQuery({
     queryKey: ['workout-plans'],
-    queryFn: () => apiClient.get('/workouts').then((r) => r.data as WorkoutPlanSummary[]),
+    queryFn: () => apiClient.get('/workouts').then((r) => r.data.plans as WorkoutPlanSummary[]),
   });
 
   const sortedPlans = [...(plans || [])].sort((a, b) => b._count.assignments - a._count.assignments);

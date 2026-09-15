@@ -5,39 +5,40 @@
   "scripts": {
     "dev": "dotenv -e ../../.env -- tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
+    "start": "tsx src/index.ts",
+    "bootstrap:owner": "dotenv -e ../../.env -- tsx src/scripts/bootstrap-owner.ts",
+    "smoke:e2e": "dotenv -e ../../.env -- tsx src/scripts/smoke-e2e.ts",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@gymstack/db": "*",
     "@gymstack/shared": "*",
+    "@supabase/supabase-js": "^2.116.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
-    "express": "^4.21.0",
+    "express": "^4.22.3",
+    "express-rate-limit": "^7.4.0",
+    "google-auth-library": "^11.0.2",
     "helmet": "^8.0.0",
-    "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
-    "node-cron": "^3.0.3",
+    "node-cron": "^4.6.0",
     "pdfkit": "^0.15.0",
     "razorpay": "^2.9.0",
-    "zod": "^3.23.0",
-    "express-rate-limit": "^7.4.0",
-    "@aws-sdk/client-s3": "^3.650.0",
-    "@aws-sdk/s3-request-presigner": "^3.650.0",
-    "google-auth-library": "^9.14.0"
+    "resend": "^6.28.0",
+    "tsx": "^4.23.13",
+    "web-push": "^3.6.7",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
-    "@types/jsonwebtoken": "^9.0.7",
     "@types/morgan": "^1.9.9",
     "@types/multer": "^1.4.12",
     "@types/node": "^22.0.0",
-    "@types/node-cron": "^3.0.11",
     "@types/pdfkit": "^0.13.5",
-    "tsx": "^4.19.0",
+    "@types/web-push": "^3.6.4",
     "typescript": "^5.5.0"
   }
 }

@@ -1,13 +1,28 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import Link from 'next/link';
 import {
   CreditCard, Search, IndianRupee, CheckCircle2, AlertCircle,
   Clock, Filter, ArrowUpRight
 } from 'lucide-react';
-import { MOCK_FEES, type MockFee } from '@/lib/mock-data';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import apiClient from '@/lib/api-client';
 
 type FeeTab = 'all' | 'due' | 'overdue' | 'paid';
+type FeeRow = {
+  id: string;
+  subscriptionId?: string;
+  memberId: string;
+  memberName: string;
+  memberCode: string;
+  plan: string;
+  amount: number;
+  dueDate: string;
+  status: 'due' | 'overdue' | 'paid';
+  paidAt: string | null;
+  method: 'cash' | 'upi' | 'card' | 'netbanking' | 'razorpay' | null;
+};
 
 function formatCurrency(amount: number) {
   return `₹${amount.toLocaleString('en-IN')}`;
@@ -18,12 +33,63 @@ function formatDate(value: string) {
 }
 
 export default function FeesPage() {
-  const [fees, setFees] = useState<MockFee[]>(MOCK_FEES);
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<FeeTab>('all');
   const [search, setSearch] = useState('');
   const [collectingId, setCollectingId] = useState<string | null>(null);
-  const [collectMethod, setCollectMethod] = useState<'cash' | 'upi' | 'online'>('cash');
+  const [collectMethod, setCollectMethod] = useState<'cash' | 'upi' | 'card'>('cash');
   const [justCollected, setJustCollected] = useState<string | null>(null);
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['fees'],
+    queryFn: async () => {
+      const [dueResponse, paidResponse] = await Promise.all([
+        apiClient.get('/payments/due'),
+        apiClient.get('/payments', { params: { limit: 100 } }),
+      ]);
+      const now = Date.now();
+      const due: FeeRow[] = dueResponse.data.members.map((item: any) => ({
+        id: `due-${item.subscriptionId}`,
+        subscriptionId: item.subscriptionId,
+        memberId: item.memberId,
+        memberName: item.memberName,
+        memberCode: item.memberCode,
+        plan: item.planName,
+        amount: Number(item.amount),
+        dueDate: item.expiredOn,
+        status: new Date(item.expiredOn).getTime() < now ? 'overdue' : 'due',
+        paidAt: null,
+        method: null,
+      }));
+      const paid: FeeRow[] = paidResponse.data.payments.map((item: any) => ({
+        id: item.id,
+        memberId: item.memberId,
+        memberName: item.member.user.name,
+        memberCode: item.member.memberCode,
+        plan: 'Payment',
+        amount: Number(item.totalAmount),
+        dueDate: item.paidAt,
+        status: 'paid',
+        paidAt: item.paidAt,
+        method: item.paymentMethod,
+      }));
+      return [...due, ...paid];
+    },
+  });
+  const fees = data ?? [];
+  const collectMutation = useMutation({
+    mutationFn: (fee: FeeRow) => apiClient.post('/payments/collect', {
+      memberId: fee.memberId,
+      subscriptionId: fee.subscriptionId,
+      amount: fee.amount,
+      paymentMethod: collectMethod,
+    }),
+    onSuccess: async (_response, fee) => {
+      setJustCollected(fee.id);
+      setCollectingId(null);
+      await queryClient.invalidateQueries({ queryKey: ['fees'] });
+      window.setTimeout(() => setJustCollected(null), 2000);
+    },
+  });
 
   const filtered = useMemo(() => {
     let list = fees;
@@ -49,26 +115,23 @@ export default function FeesPage() {
   }), [fees]);
 
   const handleCollect = (feeId: string) => {
-    setFees((prev) =>
-      prev.map((f) =>
-        f.id === feeId
-          ? { ...f, status: 'paid' as const, paidAt: new Date().toISOString(), method: collectMethod }
-          : f
-      )
-    );
-    setJustCollected(feeId);
-    setTimeout(() => setJustCollected(null), 2000);
-    setCollectingId(null);
+    const fee = fees.find((item) => item.id === feeId);
+    if (fee) collectMutation.mutate(fee);
   };
 
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="stagger-1">
-        <h1 className="text-page-title text-text-primary">Fee Management</h1>
-        <p className="text-body text-text-secondary mt-2">
+      <div className="stagger-1 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-page-title text-text-primary">Fee Management</h1>
+          <p className="text-body text-text-secondary mt-2">
           Track and collect member fees  •  {formatDate(new Date().toISOString())}
-        </p>
+          </p>
+        </div>
+        <Link href="/payments/collect" className="btn btn-primary">
+          <CreditCard size={16} /> Collect Fee
+        </Link>
       </div>
 
       {/* Stats */}
@@ -130,7 +193,11 @@ export default function FeesPage() {
       </div>
 
       {/* Table */}
-      {filtered.length === 0 ? (
+      {isLoading ? (
+        <div className="card space-y-3">{Array.from({ length: 5 }).map((_, index) => <div key={index} className="h-12 rounded bg-gray-100 animate-pulse" />)}</div>
+      ) : isError ? (
+        <div className="card empty-state"><p className="empty-state-title">Could not load fees</p><button className="btn btn-primary" onClick={() => refetch()}>Retry</button></div>
+      ) : filtered.length === 0 ? (
         <div className="card">
           <div className="empty-state">
             <IndianRupee className="empty-state-icon" />
@@ -198,7 +265,7 @@ export default function FeesPage() {
                             {isCollecting ? (
                               <div className="flex items-center gap-2 justify-end">
                                 <div className="flex gap-1">
-                                  {(['cash', 'upi', 'online'] as const).map((method) => (
+                                  {(['cash', 'upi', 'card'] as const).map((method) => (
                                     <button
                                       key={method}
                                       onClick={() => setCollectMethod(method)}
@@ -214,6 +281,7 @@ export default function FeesPage() {
                                 </div>
                                 <button
                                   onClick={() => handleCollect(fee.id)}
+                                  disabled={collectMutation.isPending}
                                   className="btn btn-primary h-7 px-3 text-badge"
                                 >
                                   <CheckCircle2 size={12} /> Confirm

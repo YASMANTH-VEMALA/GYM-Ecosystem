@@ -7,20 +7,32 @@ import apiClient from '@/lib/api-client';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 
+type BranchMember = {
+  id: string;
+  memberCode: string;
+  user: {
+    name: string;
+    phone: string;
+    email?: string | null;
+  };
+};
+
 export default function CollectFeePage() {
   const router = useRouter();
   const [memberId, setMemberId] = useState('');
   const [memberSearch, setMemberSearch] = useState('');
+  const [showMemberResults, setShowMemberResults] = useState(false);
   const [planId, setPlanId] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [upiRef, setUpiRef] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const { data: members } = useQuery({
+  const { data: members, isLoading: membersLoading } = useQuery({
     queryKey: ['members-search', memberSearch],
-    queryFn: () => apiClient.get('/members', { params: { search: memberSearch, limit: 5 } }).then((r) => r.data),
-    enabled: memberSearch.length >= 2,
+    queryFn: () => apiClient.get('/members', {
+      params: { search: memberSearch.trim() || undefined, limit: 50 },
+    }).then((r) => r.data),
   });
 
   const { data: plans } = useQuery({
@@ -67,30 +79,47 @@ export default function CollectFeePage() {
         {/* Member search */}
         <div>
           <label htmlFor="fee-member" className="input-label">Member <span className="text-danger">*</span></label>
+          <p className="text-caption text-text-muted mb-2">Showing members from your current gym branch only.</p>
           <input
             id="fee-member"
             type="text"
-            placeholder="Search by name or phone..."
+            placeholder="Search by name, phone, or member code..."
             value={memberSearch}
-            onChange={(e) => { setMemberSearch(e.target.value); setMemberId(''); }}
+            onFocus={() => setShowMemberResults(true)}
+            onChange={(e) => {
+              setMemberSearch(e.target.value);
+              setMemberId('');
+              setShowMemberResults(true);
+            }}
             className="input"
+            autoComplete="off"
           />
-          {members?.members?.length > 0 && !memberId && (
-            <div className="mt-1 border border-divider rounded-btn overflow-hidden">
-              {members.members.map((m: Record<string, unknown>) => (
+          {showMemberResults && !memberId && (
+            <div className="mt-1 max-h-72 overflow-y-auto border border-divider rounded-btn bg-surface shadow-lg">
+              {membersLoading ? (
+                <p className="px-4 py-3 text-body text-text-muted">Loading branch members...</p>
+              ) : members?.members?.length ? members.members.map((member: BranchMember) => (
                 <button
-                  key={m.id as string}
+                  key={member.id}
                   type="button"
                   onClick={() => {
-                    setMemberId(m.id as string);
-                    setMemberSearch(`${(m.user as Record<string, string>)?.name} (${m.memberCode})`);
+                    setMemberId(member.id);
+                    setMemberSearch(`${member.user.name} (${member.memberCode})`);
+                    setShowMemberResults(false);
                   }}
-                  className="w-full text-left px-4 py-2 hover:bg-page text-body transition-colors duration-normal"
+                  className="w-full text-left px-4 py-3 hover:bg-page border-b border-divider last:border-b-0 transition-colors duration-normal"
                 >
-                  <span className="font-medium text-text-primary">{(m.user as Record<string, string>)?.name}</span>
-                  <span className="text-text-secondary ml-2 font-mono text-caption">{m.memberCode as string}</span>
+                  <span className="flex items-center justify-between gap-3">
+                    <span className="font-medium text-text-primary">{member.user.name}</span>
+                    <span className="text-text-secondary font-mono text-caption">{member.memberCode}</span>
+                  </span>
+                  <span className="block text-caption text-text-muted mt-1">
+                    {member.user.phone}{member.user.email ? ` · ${member.user.email}` : ''}
+                  </span>
                 </button>
-              ))}
+              )) : (
+                <p className="px-4 py-3 text-body text-text-muted">No members found in this branch.</p>
+              )}
             </div>
           )}
         </div>

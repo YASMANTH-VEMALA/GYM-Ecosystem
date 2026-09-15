@@ -3,22 +3,24 @@ import { z } from 'zod';
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   API_PORT: z.coerce.number().default(4000),
+  PORT: z.coerce.number().optional(),
   DATABASE_URL: z.string(),
-  JWT_SECRET: z.string().min(10),
-  JWT_EXPIRES_IN: z.string().default('7d'),
+  SUPABASE_URL: z.string().url(),
+  SUPABASE_SECRET_KEY: z.string().min(20),
+  SUPABASE_LOGO_BUCKET: z.string().min(1).default('gymstack-logos'),
   WEB_URL: z.string().default('http://localhost:3000'),
   PLATFORM_DOMAIN: z.string().default('mygymapp.in'),
+  QR_ENCRYPTION_KEY: z.string().min(32),
+  ENABLE_CRON_JOBS: z.enum(['true', 'false']).default('true').transform((value) => value === 'true'),
+  RESEND_API_KEY: z.string().optional(),
+  RESEND_FROM_EMAIL: z.string().default('GymOS <notifications@vormex.in>'),
+  WEB_PUSH_VAPID_PUBLIC_KEY: z.string().optional(),
+  WEB_PUSH_VAPID_PRIVATE_KEY: z.string().optional(),
+  WEB_PUSH_VAPID_SUBJECT: z.string().default('mailto:support@mygymapp.in'),
 
   // Razorpay
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
-
-  // R2
-  R2_ACCOUNT_ID: z.string().optional(),
-  R2_ACCESS_KEY_ID: z.string().optional(),
-  R2_SECRET_ACCESS_KEY: z.string().optional(),
-  R2_BUCKET_NAME: z.string().default('gymstack-files'),
-  R2_PUBLIC_URL: z.string().optional(),
 
   // Firebase
   FIREBASE_PROJECT_ID: z.string().optional(),

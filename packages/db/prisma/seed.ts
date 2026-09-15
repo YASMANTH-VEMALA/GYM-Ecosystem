@@ -1,5 +1,4 @@
-import { PrismaClient } from '@prisma/client';
-import { randomUUID } from 'crypto';
+import { PrismaClient } from '../generated/client';
 
 const prisma = new PrismaClient();
 
@@ -77,8 +76,8 @@ async function main() {
 
   for (const ex of exercises) {
     await prisma.exercise.upsert({
-      where: { id: randomUUID() },
-      update: {},
+      where: { name_muscleGroup: { name: ex.name, muscleGroup: ex.muscleGroup } },
+      update: { nameHi: ex.nameHi, equipment: ex.equipment },
       create: {
         name: ex.name,
         nameHi: ex.nameHi,
@@ -98,8 +97,15 @@ async function main() {
   ];
 
   for (const plan of saasPlans) {
-    await prisma.saasPlan.create({
-      data: {
+    await prisma.saasPlan.upsert({
+      where: { name: plan.name },
+      update: {
+        priceMonthly: plan.priceMonthly,
+        maxMembers: plan.maxMembers,
+        maxStaff: plan.maxStaff,
+        features: plan.features,
+      },
+      create: {
         name: plan.name,
         priceMonthly: plan.priceMonthly,
         maxMembers: plan.maxMembers,

@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: gymos-api
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npm run db:generate && npm run build --workspace=api
+    preDeployCommand: npm run db:migrate:deploy
+    startCommand: npm run start --workspace=api
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ENABLE_CRON_JOBS
+        value: "true"
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: QR_ENCRYPTION_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_EMAIL
+        value: GymOS <notifications@vormex.in>
+      - key: WEB_PUSH_VAPID_PUBLIC_KEY
+        sync: false
+      - key: WEB_PUSH_VAPID_PRIVATE_KEY
+        sync: false
+      - key: WEB_PUSH_VAPID_SUBJECT
+        sync: false
+      - key: WEB_URL
+        sync: false

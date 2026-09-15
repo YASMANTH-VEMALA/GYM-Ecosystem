@@ -1,5 +1,9 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+import { X } from 'lucide-react';
+import QRCode from 'qrcode';
+
 interface QRModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -7,56 +11,62 @@ interface QRModalProps {
 }
 
 export function QRModal({ isOpen, onClose, memberCode }: QRModalProps) {
+  const [qrDataUrl, setQrDataUrl] = useState('');
+
+  useEffect(() => {
+    if (!isOpen || !memberCode) return;
+    let active = true;
+    QRCode.toDataURL(memberCode, {
+      width: 320,
+      margin: 2,
+      color: { dark: '#0F0F0F', light: '#FFFFFF' },
+      errorCorrectionLevel: 'M',
+    }).then((url) => {
+      if (active) setQrDataUrl(url);
+    }).catch(() => {
+      if (active) setQrDataUrl('');
+    });
+    return () => { active = false; };
+  }, [isOpen, memberCode]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-6"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6 backdrop-blur-md" onClick={onClose} role="presentation">
       <div
-        className="bg-[#1A1A1A] rounded-3xl p-6 w-full max-w-sm border border-white/[0.1] animate-scale-in"
-        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-sm rounded-3xl border border-white/[0.1] bg-[#1A1A1A] p-6 animate-scale-in"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="member-qr-title"
       >
-        <div className="text-center mb-4">
-          <h2 className="text-lg font-semibold text-[#F5F5F0]">Check-in QR Code</h2>
-          <p className="text-xs text-[#888] mt-1">Show this to the gym kiosk</p>
+        <button onClick={onClose} className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-xl text-[#888] active:scale-95" aria-label="Close QR code">
+          <X size={20} />
+        </button>
+        <div className="mb-4 text-center">
+          <h2 id="member-qr-title" className="text-lg font-semibold text-[#F5F5F0]">Membership QR</h2>
+          <p className="mt-1 text-xs text-[#888]">Show this code at reception</p>
         </div>
-        <div className="w-48 h-48 mx-auto bg-white rounded-2xl p-3 mb-4">
-          <svg viewBox="0 0 100 100" className="w-full h-full">
-            {/* QR finder patterns */}
-            <rect x="5" y="5" width="25" height="25" fill="black" rx="3" />
-            <rect x="8" y="8" width="19" height="19" fill="white" rx="2" />
-            <rect x="11" y="11" width="13" height="13" fill="black" rx="1" />
-            <rect x="70" y="5" width="25" height="25" fill="black" rx="3" />
-            <rect x="73" y="8" width="19" height="19" fill="white" rx="2" />
-            <rect x="76" y="11" width="13" height="13" fill="black" rx="1" />
-            <rect x="5" y="70" width="25" height="25" fill="black" rx="3" />
-            <rect x="8" y="73" width="19" height="19" fill="white" rx="2" />
-            <rect x="11" y="76" width="13" height="13" fill="black" rx="1" />
-            {/* Data pattern */}
-            {[35,40,45,50,55,60,65].map((x) =>
-              [5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90].map((y) => (
-                (x + y) % 10 < 6 ? <rect key={`${x}-${y}`} x={x} y={y} width="4" height="4" fill="black" rx="0.5" /> : null
-              ))
-            )}
-            {[5,10,15,20,25,30].map((x) =>
-              [35,40,45,50,55,60,65].map((y) => (
-                (x * y) % 7 < 4 ? <rect key={`b-${x}-${y}`} x={x} y={y} width="4" height="4" fill="black" rx="0.5" /> : null
-              ))
-            )}
-            {[70,75,80,85,90].map((x) =>
-              [35,40,45,50,55,60,65,70,75,80,85,90].map((y) => (
-                (x + y) % 8 < 5 ? <rect key={`c-${x}-${y}`} x={x} y={y} width="4" height="4" fill="black" rx="0.5" /> : null
-              ))
-            )}
-          </svg>
+        <div className="mx-auto mb-4 grid h-52 w-52 place-items-center rounded-2xl bg-white p-3">
+          {qrDataUrl ? (
+            // The QR is generated locally from the member code and is intentionally a data URL.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={qrDataUrl} alt={`QR code for member ${memberCode}`} className="h-full w-full" />
+          ) : (
+            <div className="h-full w-full rounded-xl bg-black/5 animate-pulse" />
+          )}
         </div>
-        <p className="text-center text-sm font-mono text-[#888]">ID: {memberCode}</p>
-        <button
-          onClick={onClose}
-          className="w-full mt-4 py-3 rounded-2xl bg-white/[0.06] border border-white/[0.1] text-sm font-medium text-[#F5F5F0] active:scale-[0.98] transition-transform"
-        >
+        <p className="text-center font-mono text-sm tracking-wider text-[#888]">{memberCode}</p>
+        <button onClick={onClose} className="mt-4 h-12 w-full rounded-xl border border-white/[0.1] bg-white/[0.06] text-sm font-medium text-[#F5F5F0] active:scale-[0.98]">
           Close
         </button>
       </div>

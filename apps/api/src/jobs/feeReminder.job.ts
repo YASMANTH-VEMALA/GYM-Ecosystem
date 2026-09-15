@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import prisma from '@gymstack/db';
-import { sendFeeReminder } from '../services/whatsapp.service';
+import { sendFeeReminderEmail } from '../services/email.service';
 
 // Daily 9:00 AM IST — members with fee due in 3 days
 export function startFeeReminderJob() {
@@ -39,7 +39,7 @@ export function startFeeReminderJob() {
 
                     if (!alreadySent) {
                         try {
-                            await sendFeeReminder(sub.memberId);
+                            await sendFeeReminderEmail(sub.memberId);
                         } catch (err) {
                             console.error(`[CRON] Fee reminder failed for member ${sub.memberId}:`, (err as Error).message);
                         }

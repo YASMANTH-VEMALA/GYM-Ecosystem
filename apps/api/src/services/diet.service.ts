@@ -180,12 +180,21 @@ export async function duplicateDietChart(id: string, gymId: string, userId: stri
   return duplicate;
 }
 
-export async function assignDietChart(dietChartId: string, memberIds: string[], assignedBy: string) {
+export async function assignDietChart(dietChartId: string, memberIds: string[], assignedBy: string, gymId: string) {
+  if (!Array.isArray(memberIds) || memberIds.length === 0) throw new Error('Select at least one member');
+  const uniqueMemberIds = [...new Set(memberIds)];
+  const [chart, memberCount] = await Promise.all([
+    prisma.dietChart.findFirst({ where: { id: dietChartId, gymId }, select: { id: true } }),
+    prisma.member.count({ where: { id: { in: uniqueMemberIds }, gymId } }),
+  ]);
+  if (!chart) throw new Error('Diet chart not found');
+  if (memberCount !== uniqueMemberIds.length) throw new Error('One or more members do not belong to this gym');
+
   await prisma.$transaction(async (tx) => {
     // Deactivate existing active diet assignments for these members
     await tx.memberDietAssignment.updateMany({
       where: {
-        memberId: { in: memberIds },
+        memberId: { in: uniqueMemberIds },
         isActive: true,
       },
       data: { isActive: false },
@@ -193,7 +202,7 @@ export async function assignDietChart(dietChartId: string, memberIds: string[], 
 
     // Create new assignments
     await tx.memberDietAssignment.createMany({
-      data: memberIds.map((memberId) => ({
+      data: uniqueMemberIds.map((memberId) => ({
         memberId,
         dietChartId,
         assignedBy,
@@ -204,7 +213,7 @@ export async function assignDietChart(dietChartId: string, memberIds: string[], 
 
   // Return the newly created assignments
   const assignments = await prisma.memberDietAssignment.findMany({
-    where: { dietChartId, memberId: { in: memberIds }, isActive: true },
+    where: { dietChartId, memberId: { in: uniqueMemberIds }, isActive: true },
     include: {
       member: { include: { user: { select: { name: true } } } },
       dietChart: { select: { name: true } },

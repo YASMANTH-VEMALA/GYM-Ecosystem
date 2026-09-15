@@ -21,7 +21,7 @@ export default function PlansPage() {
 
   const { data: plans, isLoading } = useQuery({
     queryKey: ['plans'],
-    queryFn: () => apiClient.get('/plans').then((r) => r.data),
+    queryFn: () => apiClient.get('/plans').then((r) => r.data.plans),
   });
 
   const toggleMutation = useMutation({

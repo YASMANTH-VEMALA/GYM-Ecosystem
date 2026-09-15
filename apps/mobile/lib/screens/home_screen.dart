@@ -73,7 +73,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     if (result != null && mounted) {
       try {
-        final qrData = jsonDecode(result);
+        final Map<String, dynamic> qrData;
+        final uri = Uri.tryParse(result);
+        if (uri != null && uri.hasScheme) {
+          qrData = {
+            'gymId': uri.queryParameters['gymId'],
+            'hash': uri.queryParameters['hash'],
+          };
+        } else {
+          // Keep accepting older printed QR codes during the transition.
+          qrData = jsonDecode(result) as Map<String, dynamic>;
+        }
+        if (qrData['gymId'] == null || qrData['hash'] == null) {
+          throw const FormatException('Invalid gym QR code');
+        }
         setState(() {
           _checkingIn = true;
           _checkInStatus = null;

@@ -1,7 +1,6 @@
 import cron from 'node-cron';
 import prisma from '@gymstack/db';
-import { sendFeeOverdue } from '../services/whatsapp.service';
-import { sendSMS } from '../services/sms.service';
+import { sendFeeOverdueEmail } from '../services/email.service';
 
 // Daily 10:00 AM IST — members with fee due today, send both WhatsApp + SMS
 export function startFeeOverdueJob() {
@@ -41,18 +40,11 @@ export function startFeeOverdueJob() {
 
                     if (!alreadySent) {
                         try {
-                            await sendFeeOverdue(sub.memberId);
+                            await sendFeeOverdueEmail(sub.memberId);
                         } catch (err) {
                             console.error(`[CRON] WhatsApp overdue failed for ${sub.memberId}:`, (err as Error).message);
                         }
 
-                        // Also send SMS
-                        try {
-                            const smsMessage = `Urgent: Your ${sub.plan.name} membership is overdue. Please renew at the front desk today.`;
-                            await sendSMS(sub.member.user.phone, smsMessage);
-                        } catch (err) {
-                            console.error(`[CRON] SMS overdue failed for ${sub.memberId}:`, (err as Error).message);
-                        }
                     }
                 }
             } catch (err) {

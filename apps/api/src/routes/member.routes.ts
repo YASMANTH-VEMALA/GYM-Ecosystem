@@ -1,15 +1,17 @@
 import { Router, Request, Response } from 'express';
 import prisma from '@gymstack/db';
-import { authenticate, requireRole } from '../middleware/auth';
+import { authenticate, requireManagerSection, requireRole } from '../middleware/auth';
 import { gymContext } from '../middleware/gym-context';
 import { validate } from '../middleware/validate';
 import { createMemberSchema, updateMemberSchema } from '@gymstack/shared';
 import * as memberService from '../services/member.service';
 import { saveFCMToken } from '../services/fcm.service';
 import { asString, requireString } from '../utils/request';
+import { assertMemberAccess } from '../utils/member-access';
 
 const router = Router();
 router.use(authenticate, gymContext);
+router.use(requireManagerSection('members'));
 
 // ─── FCM Token (from mobile app) ──────────────────────
 router.post('/fcm-token', async (req: Request, res: Response) => {
@@ -30,7 +32,7 @@ router.get('/me', async (req: Request, res: Response) => {
       where: { userId: req.user!.userId },
       include: {
         user: { select: { name: true, phone: true, email: true, avatarUrl: true } },
-        gym: { select: { id: true, name: true, slug: true, logoUrl: true, primaryColor: true } },
+        gym: { select: { id: true, name: true, slug: true, logoUrl: true, primaryColor: true, organization: { select: { logoUrl: true } } } },
         subscriptions: {
           include: { plan: true },
           orderBy: { endDate: 'desc' },
@@ -62,7 +64,7 @@ router.get('/me', async (req: Request, res: Response) => {
     sevenDaysAgo.setHours(0, 0, 0, 0);
     const recentCheckIns = await prisma.checkIn.findMany({
       where: { memberId: member.id, checkedInAt: { gte: sevenDaysAgo } },
-      select: { checkedInAt: true },
+      select: { checkedInAt: true, source: true },
     });
     const attendanceDays = recentCheckIns.map((c) => c.checkedInAt.toISOString().split('T')[0]);
 
@@ -91,7 +93,7 @@ router.get('/me', async (req: Request, res: Response) => {
         dateOfBirth: member.dateOfBirth,
         joinedAt: member.joinedAt,
       },
-      gym: member.gym,
+      gym: { ...member.gym, logoUrl: member.gym.logoUrl ?? member.gym.organization.logoUrl, organization: undefined },
       subscription: activeSub ? {
         planName: activeSub.plan.name,
         startDate: activeSub.startDate,
@@ -109,9 +111,10 @@ router.get('/me', async (req: Request, res: Response) => {
 });
 
 // ─── Member attendance calendar ───────────────────────
-router.get('/:id/attendance', requireRole('gym_owner', 'receptionist', 'coach', 'member'), async (req: Request, res: Response) => {
+router.get('/:id/attendance', requireRole('gym_owner', 'manager', 'receptionist', 'coach', 'member'), async (req: Request, res: Response) => {
   try {
     const memberId = requireString(req.params.id, 'id');
+    await assertMemberAccess(req, memberId);
     const targetMonth = Number(asString(req.query.month)) || new Date().getMonth() + 1;
     const targetYear = Number(asString(req.query.year)) || new Date().getFullYear();
 
@@ -123,7 +126,7 @@ router.get('/:id/attendance', requireRole('gym_owner', 'receptionist', 'coach', 
         memberId,
         checkedInAt: { gte: startDate, lte: endDate },
       },
-      select: { checkedInAt: true },
+      select: { checkedInAt: true, source: true },
       orderBy: { checkedInAt: 'asc' },
     });
 
@@ -146,6 +149,7 @@ router.get('/:id/attendance', requireRole('gym_owner', 'receptionist', 'coach', 
       checkIns: checkIns.map((c) => ({
         date: c.checkedInAt.toISOString().split('T')[0],
         time: c.checkedInAt.toISOString(),
+        source: c.source,
       })),
     });
   } catch (err) {
@@ -155,7 +159,7 @@ router.get('/:id/attendance', requireRole('gym_owner', 'receptionist', 'coach', 
 
 // ─── Existing CRUD routes ─────────────────────────────
 
-router.get('/', requireRole('gym_owner', 'receptionist', 'coach'), async (req: Request, res: Response) => {
+router.get('/', requireRole('gym_owner', 'manager', 'receptionist', 'coach'), async (req: Request, res: Response) => {
   try {
     const search = asString(req.query.search);
     const status = asString(req.query.status);
@@ -173,7 +177,7 @@ router.get('/', requireRole('gym_owner', 'receptionist', 'coach'), async (req: R
   }
 });
 
-router.get('/:id', requireRole('gym_owner', 'receptionist', 'coach'), async (req: Request, res: Response) => {
+router.get('/:id', requireRole('gym_owner', 'manager', 'receptionist', 'coach'), async (req: Request, res: Response) => {
   try {
     const memberId = requireString(req.params.id, 'id');
     const result = await memberService.getMemberById(memberId, req.gymId!);
@@ -183,16 +187,16 @@ router.get('/:id', requireRole('gym_owner', 'receptionist', 'coach'), async (req
   }
 });
 
-router.post('/', requireRole('gym_owner', 'receptionist'), validate(createMemberSchema), async (req: Request, res: Response) => {
+router.post('/', requireRole('gym_owner', 'manager', 'receptionist'), validate(createMemberSchema), async (req: Request, res: Response) => {
   try {
     const member = await memberService.createMember(req.gymId!, req.body);
     res.status(201).json({ member });
   } catch (err) {
-    res.status(400).json({ error: (err as Error).message });
+    res.status(400).json({ error: memberService.friendlyMemberCreationError(err) });
   }
 });
 
-router.put('/:id', requireRole('gym_owner', 'receptionist'), validate(updateMemberSchema), async (req: Request, res: Response) => {
+router.put('/:id', requireRole('gym_owner', 'manager', 'receptionist'), validate(updateMemberSchema), async (req: Request, res: Response) => {
   try {
     const memberId = requireString(req.params.id, 'id');
     const member = await memberService.updateMember(memberId, req.gymId!, req.body);

@@ -1,384 +1,170 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import {
-  Bell, Send, Search, MessageSquare, Smartphone, Mail,
-  Users, User2, CheckCircle2, Clock, XCircle, Zap,
-  Gift, AlertTriangle, Megaphone
-} from 'lucide-react';
-import { MOCK_NOTIFICATIONS, MOCK_MEMBERS, type MockNotification } from '@/lib/mock-data';
+import { DragEvent, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, Bell, Check, CheckCircle2, Clock, Gift, GripVertical, IndianRupee, Mail, Megaphone, Search, Send, UserCheck, Users, XCircle, Zap } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import apiClient from '@/lib/api-client';
 
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+type Channel = 'email' | 'push' | 'both';
+type Audience = 'all' | 'payment_due' | 'overdue' | 'active' | 'expiring_soon';
+type Recipient = {
+  id: string; memberCode: string; name: string; email: string | null; pushEnabled: boolean;
+  audience: 'active' | 'expiring_soon' | 'overdue' | 'inactive'; paymentDue: boolean;
+  planName: string | null; dueDate: string | null; amount: number | null;
+};
+type ApiNotification = {
+  id: string; title: string; body: string; channel: string; status: string; sentAt: string | null; createdAt: string;
+  metadata: { failureReason?: string } | null; member: { user: { name: string } } | null;
+};
+
+const templates = [
+  { icon: AlertTriangle, label: 'Fee Reminder', audience: 'payment_due' as Audience, title: 'Membership fee reminder', body: 'Hi {firstName}, your {plan} fee of {amount} is due on {dueDate}. Please contact the gym reception.' },
+  { icon: Megaphone, label: 'Gym Update', audience: 'all' as Audience, title: 'Important gym update', body: 'Hi {firstName}, we have an important update for you.' },
+  { icon: Gift, label: 'Birthday Wish', audience: 'all' as Audience, title: 'Happy birthday, {firstName}!', body: 'Happy birthday, {name}! Wishing you a healthy and active year ahead.' },
+  { icon: Zap, label: 'Inactivity Nudge', audience: 'all' as Audience, title: 'We miss you, {firstName}!', body: 'Hi {firstName}, we have not seen you recently. Come back and keep your momentum going.' },
+];
+const mergeTags = [
+  ['{name}', 'Full name'], ['{firstName}', 'First name'], ['{memberCode}', 'Member code'],
+  ['{plan}', 'Plan'], ['{amount}', 'Amount due'], ['{dueDate}', 'Due date'],
+] as const;
+const audiences: Array<{ key: Audience; label: string; icon: typeof Users }> = [
+  { key: 'all', label: 'All members', icon: Users }, { key: 'payment_due', label: 'Payment due', icon: IndianRupee },
+  { key: 'overdue', label: 'Overdue', icon: AlertTriangle }, { key: 'expiring_soon', label: 'Expiring soon', icon: Clock },
+  { key: 'active', label: 'Active', icon: UserCheck },
+];
+
+function relativeTime(value: string) {
+  const hours = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 3600000));
+  return hours < 24 ? `${hours}h ago` : `${Math.floor(hours / 24)}d ago`;
 }
-
-function timeAgo(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const hours = Math.floor(diff / 3600000);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+function matchesAudience(recipient: Recipient, audience: Audience) {
+  return audience === 'all' || (audience === 'payment_due' ? recipient.paymentDue : recipient.audience === audience);
 }
-
-type ComposeTarget = 'all' | 'active' | 'expiring' | 'expired' | 'individual';
+function personalize(value: string, recipient?: Recipient) {
+  if (!recipient) return value;
+  const replacements: Record<string, string> = {
+    '{name}': recipient.name,
+    '{firstName}': recipient.name.trim().split(/\s+/)[0] ?? recipient.name,
+    '{memberCode}': recipient.memberCode,
+    '{plan}': recipient.planName ?? 'your membership',
+    '{amount}': recipient.amount === null ? 'the amount due' : `₹${recipient.amount.toLocaleString('en-IN')}`,
+    '{dueDate}': recipient.dueDate ? new Date(recipient.dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'the due date',
+  };
+  return Object.entries(replacements).reduce((result, [tag, replacement]) => result.replaceAll(tag, replacement), value);
+}
 
 export default function NotificationsPage() {
-  const [notifications, setNotifications] = useState<MockNotification[]>(MOCK_NOTIFICATIONS);
-  const [activeView, setActiveView] = useState<'history' | 'compose'>('history');
-  const [search, setSearch] = useState('');
+  const queryClient = useQueryClient();
+  const messageRef = useRef<HTMLTextAreaElement>(null);
+  const [view, setView] = useState<'history' | 'compose'>('history');
+  const [historySearch, setHistorySearch] = useState('');
+  const [recipientSearch, setRecipientSearch] = useState('');
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [audience, setAudience] = useState<Audience>('all');
+  const [channel, setChannel] = useState<Channel>('both');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  // Compose state
-  const [composeTitle, setComposeTitle] = useState('');
-  const [composeMessage, setComposeMessage] = useState('');
-  const [composeChannel, setComposeChannel] = useState<'whatsapp' | 'sms' | 'push'>('whatsapp');
-  const [composeTarget, setComposeTarget] = useState<ComposeTarget>('all');
-  const [composeType, setComposeType] = useState<'general' | 'fee_reminder' | 'promo'>('general');
-  const [sendingState, setSendingState] = useState<'idle' | 'sending' | 'sent'>('idle');
+  const history = useQuery({ queryKey: ['notifications'], queryFn: () => apiClient.get<{ notifications: ApiNotification[] }>('/notifications', { params: { limit: 200 } }).then((response) => response.data.notifications) });
+  const recipients = useQuery({ queryKey: ['notification-recipients'], queryFn: () => apiClient.get<{ recipients: Recipient[] }>('/notifications/recipients').then((response) => response.data.recipients) });
+  const send = useMutation({
+    mutationFn: () => apiClient.post('/notifications', { title, body, channel, target: 'selected', targetIds: selectedIds }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      setTitle(''); setBody(''); setSelectedIds([]); setView('history');
+    },
+  });
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return notifications;
-    const q = search.toLowerCase();
-    return notifications.filter(
-      (n) => n.title.toLowerCase().includes(q) || n.sentTo.toLowerCase().includes(q) || n.message.toLowerCase().includes(q)
-    );
-  }, [notifications, search]);
-
-  const stats = useMemo(() => ({
-    total: notifications.length,
-    delivered: notifications.filter(n => n.status === 'delivered').length,
-    failed: notifications.filter(n => n.status === 'failed').length,
-    pending: notifications.filter(n => n.status === 'pending').length,
-  }), [notifications]);
-
-  const quickTemplates = [
-    { icon: AlertTriangle, label: 'Fee Reminder', title: 'Fee Reminder', message: 'Hi {name}, your {plan} fee of ₹{amount} is due. Please visit the gym or pay via UPI.', type: 'fee_reminder' as const },
-    { icon: Megaphone, label: 'Summer Offer', title: 'Summer Special 🌞', message: 'Upgrade your plan this month and get 15% off! Limited time offer.', type: 'promo' as const },
-    { icon: Gift, label: 'Birthday Wish', title: 'Happy Birthday! 🎂', message: 'Wishing you a healthy and fit year ahead! Enjoy a complimentary protein shake today.', type: 'general' as const },
-    { icon: Zap, label: 'Inactivity Nudge', title: 'We miss you! 💪', message: 'Hi {name}, we noticed you haven\'t visited in a while. Your body is calling — come back stronger!', type: 'general' as const },
-  ];
-
-  const handleSend = () => {
-    if (!composeTitle.trim() || !composeMessage.trim()) return;
-
-    setSendingState('sending');
-
-    setTimeout(() => {
-      const targetLabel =
-        composeTarget === 'all' ? 'All Members' :
-        composeTarget === 'individual' ? 'Selected Member' :
-        `${composeTarget.charAt(0).toUpperCase() + composeTarget.slice(1)} Members`;
-
-      const newNotif: MockNotification = {
-        id: `notif-${Date.now()}`,
-        title: composeTitle,
-        message: composeMessage,
-        type: composeType,
-        sentAt: new Date().toISOString(),
-        sentTo: targetLabel,
-        channel: composeChannel,
-        status: 'delivered',
-      };
-
-      setNotifications((prev) => [newNotif, ...prev]);
-      setSendingState('sent');
-
-      setTimeout(() => {
-        setSendingState('idle');
-        setComposeTitle('');
-        setComposeMessage('');
-        setActiveView('history');
-      }, 1500);
-    }, 1200);
+  const recipientList = recipients.data ?? [];
+  const audienceMembers = useMemo(() => recipientList.filter((item) => matchesAudience(item, audience)), [audience, recipientList]);
+  const visibleRecipients = useMemo(() => {
+    const term = recipientSearch.trim().toLowerCase();
+    return audienceMembers.filter((item) => !term || item.name.toLowerCase().includes(term) || item.memberCode.toLowerCase().includes(term) || item.email?.toLowerCase().includes(term));
+  }, [audienceMembers, recipientSearch]);
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const selectedRecipients = useMemo(() => recipientList.filter((item) => selectedSet.has(item.id)), [recipientList, selectedSet]);
+  const previewRecipient = selectedRecipients[0];
+  const allVisibleSelected = visibleRecipients.length > 0 && visibleRecipients.every((item) => selectedSet.has(item.id));
+  const filteredHistory = useMemo(() => (history.data ?? []).filter((item) => {
+    const term = historySearch.toLowerCase();
+    return !term || item.title.toLowerCase().includes(term) || item.body.toLowerCase().includes(term) || item.member?.user.name.toLowerCase().includes(term);
+  }), [history.data, historySearch]);
+  const stats = {
+    total: history.data?.length ?? 0,
+    delivered: history.data?.filter((item) => item.status === 'delivered').length ?? 0,
+    pending: history.data?.filter((item) => ['pending', 'scheduled'].includes(item.status)).length ?? 0,
+    failed: history.data?.filter((item) => item.status === 'failed').length ?? 0,
   };
 
-  const applyTemplate = (template: typeof quickTemplates[0]) => {
-    setComposeTitle(template.title);
-    setComposeMessage(template.message);
-    setComposeType(template.type);
-    setActiveView('compose');
+  const audienceCount = (key: Audience) => recipientList.filter((item) => matchesAudience(item, key)).length;
+  const toggleRecipient = (id: string) => setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  const toggleVisible = () => setSelectedIds((current) => {
+    const visibleIds = new Set(visibleRecipients.map((item) => item.id));
+    return allVisibleSelected ? current.filter((id) => !visibleIds.has(id)) : Array.from(new Set([...current, ...visibleIds]));
+  });
+  const insertTag = (token: string) => {
+    const textarea = messageRef.current;
+    const start = textarea?.selectionStart ?? body.length;
+    const end = textarea?.selectionEnd ?? body.length;
+    setBody(`${body.slice(0, start)}${token}${body.slice(end)}`);
+    window.requestAnimationFrame(() => { textarea?.focus(); textarea?.setSelectionRange(start + token.length, start + token.length); });
   };
-
-  const typeIcon = (type: string) => {
-    switch (type) {
-      case 'fee_reminder': return <AlertTriangle size={14} className="text-amber-500" />;
-      case 'birthday': return <Gift size={14} className="text-pink-500" />;
-      case 'inactivity': return <Clock size={14} className="text-orange-500" />;
-      case 'promo': return <Megaphone size={14} className="text-blue-500" />;
-      default: return <Bell size={14} className="text-violet-500" />;
-    }
+  const dropTag = (event: DragEvent<HTMLTextAreaElement>) => {
+    event.preventDefault();
+    const token = event.dataTransfer.getData('text/plain');
+    if (mergeTags.some(([value]) => value === token)) insertTag(token);
   };
+  const missingEmail = selectedRecipients.filter((item) => !item.email).length;
+  const missingPush = selectedRecipients.filter((item) => !item.pushEnabled).length;
 
-  return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 stagger-1">
-        <div>
-          <h1 className="text-page-title text-text-primary">Notifications</h1>
-          <p className="text-body text-text-secondary mt-2">
-            Send and track WhatsApp, SMS, and push notifications to members
-          </p>
-        </div>
-        <button
-          onClick={() => setActiveView(activeView === 'compose' ? 'history' : 'compose')}
-          className={`btn ${activeView === 'compose' ? 'btn-secondary' : 'btn-primary'}`}
-        >
-          {activeView === 'compose' ? (
-            <><Bell size={16} /> View History</>
-          ) : (
-            <><Send size={16} /> Compose New</>
-          )}
-        </button>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-between-cards stagger-2">
-        <div className="stat-card">
-          <p className="stat-card-label">Total Sent</p>
-          <p className="stat-card-value mt-2 font-mono">{stats.total}</p>
-        </div>
-        <div className="stat-card">
-          <p className="stat-card-label">Delivered</p>
-          <p className="stat-card-value mt-2 font-mono text-success">{stats.delivered}</p>
-        </div>
-        <div className="stat-card">
-          <p className="stat-card-label">Pending</p>
-          <p className="stat-card-value mt-2 font-mono text-warning">{stats.pending}</p>
-        </div>
-        <div className="stat-card">
-          <p className="stat-card-label">Failed</p>
-          <p className="stat-card-value mt-2 font-mono text-danger">{stats.failed}</p>
-        </div>
-      </div>
-
-      {activeView === 'history' ? (
-        <>
-          {/* Quick Templates */}
-          <div className="stagger-3">
-            <h2 className="text-card-heading text-text-primary mb-3">Quick Send</h2>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-              {quickTemplates.map((tpl) => {
-                const Icon = tpl.icon;
-                return (
-                  <button
-                    key={tpl.label}
-                    onClick={() => applyTemplate(tpl)}
-                    className="card p-4 flex items-center gap-3 hover:shadow-card-hover transition-all text-left group"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors flex-shrink-0">
-                      <Icon size={18} className="text-primary" />
-                    </div>
-                    <div>
-                      <p className="text-body text-text-primary font-medium">{tpl.label}</p>
-                      <p className="text-caption text-text-muted line-clamp-1">{tpl.title}</p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Search */}
-          <div className="relative stagger-4">
-            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-            <input
-              type="text"
-              placeholder="Search notifications..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="input pl-10"
-            />
-          </div>
-
-          {/* History */}
-          <div className="card p-0 overflow-hidden stagger-5">
-            <div className="divide-y divide-divider">
-              {filtered.map((n) => (
-                <div key={n.id} className="px-card-pad py-4 hover:bg-page/50 transition-colors">
-                  <div className="flex items-start gap-3">
-                    <div className="mt-1">{typeIcon(n.type)}</div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <p className="text-body text-text-primary font-medium">{n.title}</p>
-                        <span className={`badge ${
-                          n.channel === 'whatsapp' ? 'badge-active' :
-                          n.channel === 'sms' ? 'badge-coach' : 'badge-receptionist'
-                        }`}>
-                          {n.channel === 'whatsapp' ? '💬 WhatsApp' : n.channel === 'sms' ? '📱 SMS' : '🔔 Push'}
-                        </span>
-                      </div>
-                      <p className="text-caption text-text-secondary line-clamp-2">{n.message}</p>
-                      <div className="flex items-center gap-3 mt-2">
-                        <span className="text-caption text-text-muted flex items-center gap-1">
-                          <User2 size={11} /> {n.sentTo}
-                        </span>
-                        <span className="text-caption text-text-muted">{timeAgo(n.sentAt)}</span>
-                      </div>
-                    </div>
-                    <span className={`badge flex-shrink-0 ${
-                      n.status === 'delivered' ? 'badge-active' :
-                      n.status === 'failed' ? 'badge-overdue' : 'badge-expiring'
-                    }`}>
-                      {n.status === 'delivered' && <CheckCircle2 size={11} className="mr-1" />}
-                      {n.status === 'failed' && <XCircle size={11} className="mr-1" />}
-                      {n.status === 'pending' && <Clock size={11} className="mr-1" />}
-                      {n.status}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </>
-      ) : (
-        /* ═══ COMPOSE VIEW ═══ */
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-between-cards stagger-3">
-          <div className="xl:col-span-2 space-y-6">
-            <div className="card">
-              <h2 className="text-section-heading text-text-primary mb-6">Compose Notification</h2>
-
-              {/* Channel */}
-              <div className="mb-6">
-                <label className="input-label">Channel</label>
-                <div className="flex gap-2">
-                  {([
-                    { key: 'whatsapp' as const, label: '💬 WhatsApp', icon: MessageSquare },
-                    { key: 'sms' as const, label: '📱 SMS', icon: Smartphone },
-                    { key: 'push' as const, label: '🔔 Push', icon: Bell },
-                  ]).map((ch) => (
-                    <button
-                      key={ch.key}
-                      onClick={() => setComposeChannel(ch.key)}
-                      className={`flex-1 py-3 rounded-xl text-sm font-medium transition-all border ${
-                        composeChannel === ch.key
-                          ? 'bg-primary text-white border-primary'
-                          : 'bg-surface border-border-default text-text-secondary hover:border-primary/30'
-                      }`}
-                    >
-                      {ch.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Target */}
-              <div className="mb-6">
-                <label className="input-label">Send To</label>
-                <div className="flex flex-wrap gap-2">
-                  {([
-                    { key: 'all' as const, label: 'All Members', icon: Users },
-                    { key: 'active' as const, label: 'Active', icon: CheckCircle2 },
-                    { key: 'expiring' as const, label: 'Expiring', icon: Clock },
-                    { key: 'expired' as const, label: 'Expired', icon: XCircle },
-                  ]).map((tgt) => {
-                    const Icon = tgt.icon;
-                    return (
-                      <button
-                        key={tgt.key}
-                        onClick={() => setComposeTarget(tgt.key)}
-                        className={`filter-chip ${composeTarget === tgt.key ? 'active' : ''}`}
-                      >
-                        <Icon size={12} className="mr-1" /> {tgt.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Title */}
-              <div className="mb-6">
-                <label className="input-label">Title</label>
-                <input
-                  type="text"
-                  value={composeTitle}
-                  onChange={(e) => setComposeTitle(e.target.value)}
-                  placeholder="Notification title..."
-                  className="input"
-                />
-              </div>
-
-              {/* Message */}
-              <div className="mb-6">
-                <label className="input-label">Message</label>
-                <textarea
-                  value={composeMessage}
-                  onChange={(e) => setComposeMessage(e.target.value)}
-                  placeholder="Type your message here..."
-                  rows={4}
-                  className="input h-auto py-3 resize-none"
-                />
-                <p className="text-caption text-text-muted mt-1">
-                  {composeMessage.length} characters  •  Use {'{name}'} for member name
-                </p>
-              </div>
-
-              {/* Send Button */}
-              <button
-                onClick={handleSend}
-                disabled={!composeTitle.trim() || !composeMessage.trim() || sendingState !== 'idle'}
-                className="btn btn-primary w-full h-11"
-              >
-                {sendingState === 'idle' && <><Send size={16} /> Send Notification</>}
-                {sendingState === 'sending' && (
-                  <span className="flex items-center gap-2">
-                    <div className="btn-spinner" /> Sending...
-                  </span>
-                )}
-                {sendingState === 'sent' && <><CheckCircle2 size={16} /> Sent Successfully!</>}
-              </button>
-            </div>
-          </div>
-
-          {/* Preview */}
-          <div className="card bg-[#111111] border-white/10 text-white">
-            <h3 className="text-card-heading text-white/80 mb-4">Preview</h3>
-            <div className="bg-white/[0.05] rounded-2xl p-4 border border-white/[0.08]">
-              {composeChannel === 'whatsapp' && (
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center">
-                    <MessageSquare size={12} className="text-white" />
-                  </div>
-                  <span className="text-sm text-white/60">WhatsApp</span>
-                </div>
-              )}
-              {composeChannel === 'sms' && (
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center">
-                    <Smartphone size={12} className="text-white" />
-                  </div>
-                  <span className="text-sm text-white/60">SMS</span>
-                </div>
-              )}
-              {composeChannel === 'push' && (
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-6 h-6 rounded-full bg-violet-500 flex items-center justify-center">
-                    <Bell size={12} className="text-white" />
-                  </div>
-                  <span className="text-sm text-white/60">Push Notification</span>
-                </div>
-              )}
-              <p className="text-white font-medium text-sm mb-1">{composeTitle || 'Title preview...'}</p>
-              <p className="text-white/60 text-xs leading-relaxed">{composeMessage || 'Your message will appear here...'}</p>
-              <div className="flex items-center gap-2 mt-3 text-[11px] text-white/30">
-                <Users size={10} />
-                <span>
-                  {composeTarget === 'all'
-                    ? `${MOCK_MEMBERS.length} members`
-                    : `${MOCK_MEMBERS.filter(m => m.status === composeTarget).length} members`
-                  }
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-4 p-3 bg-white/[0.03] rounded-xl border border-white/[0.06]">
-              <p className="text-[11px] text-white/30 uppercase tracking-wider mb-2">Delivery Estimate</p>
-              <p className="text-sm text-white/70">
-                {composeChannel === 'whatsapp' ? '~2 minutes' :
-                 composeChannel === 'sms' ? '~30 seconds' : 'Instant'}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+  return <div className="space-y-8">
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <div><h1 className="text-page-title text-text-primary">Notifications</h1><p className="mt-2 text-body text-text-secondary">Send personalized email and installed-app push notifications</p></div>
+      <button onClick={() => setView(view === 'compose' ? 'history' : 'compose')} className={`btn ${view === 'compose' ? 'btn-secondary' : 'btn-primary'}`}>{view === 'compose' ? <><Bell size={16} /> View history</> : <><Send size={16} /> Compose new</>}</button>
     </div>
-  );
+
+    <div className="grid grid-cols-2 gap-between-cards md:grid-cols-4">
+      {[['Total', stats.total, ''], ['Delivered', stats.delivered, 'text-success'], ['Pending', stats.pending, 'text-warning'], ['Failed', stats.failed, 'text-danger']].map(([label, value, color]) => <div className="stat-card" key={label}><p className="stat-card-label">{label}</p><p className={`stat-card-value mt-2 font-mono ${color}`}>{value}</p></div>)}
+    </div>
+
+    {view === 'history' ? <>
+      <div><h2 className="mb-3 text-card-heading text-text-primary">Templates</h2><div className="grid grid-cols-1 gap-3 md:grid-cols-4">{templates.map((template) => { const Icon = template.icon; return <button key={template.label} onClick={() => { setTitle(template.title); setBody(template.body); setAudience(template.audience); setView('compose'); }} className="card flex items-center gap-3 p-4 text-left hover:shadow-card-hover"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10"><Icon size={18} className="text-primary" /></div><span className="text-body font-medium">{template.label}</span></button>; })}</div></div>
+      <div className="relative"><Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" /><input className="input pl-10" value={historySearch} onChange={(event) => setHistorySearch(event.target.value)} placeholder="Search notifications..." /></div>
+      {history.isLoading ? <div className="card space-y-3">{Array.from({ length: 5 }).map((_, index) => <div key={index} className="h-16 animate-pulse rounded bg-gray-100" />)}</div> : history.isError ? <div className="card empty-state"><p className="empty-state-title">Could not load notifications</p><button className="btn btn-primary" onClick={() => history.refetch()}>Retry</button></div> : filteredHistory.length === 0 ? <div className="card empty-state"><Bell className="empty-state-icon" /><p className="empty-state-title">No notifications yet</p><p className="empty-state-description">Send your first member update.</p></div> : <div className="card divide-y divide-divider overflow-hidden p-0">{filteredHistory.map((item) => <div key={item.id} className="flex items-start gap-3 px-card-pad py-4">{item.channel === 'push' ? <Bell size={16} className="mt-1 text-primary" /> : <Mail size={16} className="mt-1 text-primary" />}<div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="text-body font-medium">{item.title}</p><span className="badge badge-receptionist">{item.channel === 'push' ? 'Push' : 'Email'}</span></div><p className="mt-1 text-caption text-text-secondary">{item.body}</p><p className="mt-2 text-caption text-text-muted">{item.member?.user.name ?? 'Gym owner'} · {relativeTime(item.sentAt ?? item.createdAt)}</p>{item.status === 'failed' && item.metadata?.failureReason && <p className="mt-2 break-words text-caption text-danger">{item.metadata.failureReason}</p>}</div><span className={`badge ${item.status === 'delivered' ? 'badge-active' : item.status === 'failed' ? 'badge-overdue' : 'badge-expiring'}`}>{item.status === 'delivered' ? <CheckCircle2 size={11} /> : item.status === 'failed' ? <XCircle size={11} /> : <Clock size={11} />} {item.status}</span></div>)}</div>}
+    </> : <div className="grid grid-cols-1 gap-between-cards xl:grid-cols-3">
+      <div className="card space-y-6 xl:col-span-2">
+        <div><h2 className="text-section-heading">Compose notification</h2><p className="mt-1 text-caption text-text-muted">Choose a group, check the exact members, then personalize the message.</p></div>
+        <div><label className="input-label">Channel</label><div className="flex flex-wrap gap-2">{([['both', 'Email + Push'], ['push', 'Push only'], ['email', 'Email only']] as const).map(([key, label]) => <button type="button" key={key} onClick={() => setChannel(key)} className={`filter-chip ${channel === key ? 'active' : ''}`}>{key === 'email' ? <Mail size={13} /> : <Bell size={13} />}{label}</button>)}</div></div>
+
+        <section className="rounded-xl border border-divider">
+          <div className="border-b border-divider p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between"><div><label className="input-label">Recipients</label><p className="text-caption text-text-muted">Filter a group, then select everyone or customize with checkboxes.</p></div><span className="badge badge-active w-fit"><Check size={11} /> {selectedIds.length} selected</span></div>
+            <div className="mt-4 flex flex-wrap gap-2">{audiences.map(({ key, label, icon: Icon }) => <button key={key} type="button" onClick={() => { setAudience(key); setRecipientSearch(''); }} className={`filter-chip ${audience === key ? 'active' : ''}`}><Icon size={12} /> {label} ({audienceCount(key)})</button>)}</div>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row"><div className="relative flex-1"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" /><input className="input pl-9" value={recipientSearch} onChange={(event) => setRecipientSearch(event.target.value)} placeholder="Search name, email, or member code..." /></div><button type="button" className="btn btn-secondary shrink-0" disabled={visibleRecipients.length === 0} onClick={toggleVisible}>{allVisibleSelected ? 'Clear visible' : `Select visible (${visibleRecipients.length})`}</button></div>
+          </div>
+          <div className="max-h-72 overflow-y-auto">
+            {recipients.isLoading ? <div className="space-y-2 p-4">{Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-12 animate-pulse rounded bg-gray-100" />)}</div> : recipients.isError ? <div className="empty-state py-8"><p className="empty-state-title">Could not load recipients</p><button className="btn btn-primary" onClick={() => recipients.refetch()}>Retry</button></div> : visibleRecipients.length === 0 ? <div className="empty-state py-8"><Users className="empty-state-icon" /><p className="empty-state-title">No matching members</p><p className="empty-state-description">Try another audience or clear the search.</p></div> : visibleRecipients.map((recipient) => <label key={recipient.id} className="flex min-h-[60px] cursor-pointer items-center gap-3 border-b border-divider px-4 py-3 last:border-0 hover:bg-stat-card"><input type="checkbox" className="h-4 w-4 accent-primary" checked={selectedSet.has(recipient.id)} onChange={() => toggleRecipient(recipient.id)} /><div className="avatar text-badge">{recipient.name[0]}</div><div className="min-w-0 flex-1"><p className="truncate text-body font-medium text-text-primary">{recipient.name}</p><p className="truncate text-caption text-text-muted">{recipient.memberCode} · {recipient.email ?? 'No email'}</p></div><div className="flex items-center gap-2"><span className={`badge ${recipient.audience === 'overdue' ? 'badge-overdue' : recipient.audience === 'expiring_soon' ? 'badge-expiring' : recipient.audience === 'active' ? 'badge-active' : ''}`}>{recipient.audience.replace('_', ' ')}</span>{recipient.pushEnabled && <Bell size={13} className="text-success" aria-label="Push enabled" />}</div></label>)}
+          </div>
+        </section>
+
+        <div><label className="input-label">Subject</label><input className="input" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="What is this notification about?" /></div>
+        <div>
+          <div className="flex items-center justify-between gap-3"><label className="input-label">Message</label><span className="text-caption text-text-muted">Click or drag a field into the message</span></div>
+          <div className="mb-2 flex flex-wrap gap-2">{mergeTags.map(([token, label]) => <button key={token} type="button" draggable onDragStart={(event) => { event.dataTransfer.setData('text/plain', token); event.dataTransfer.effectAllowed = 'copy'; }} onClick={() => insertTag(token)} className="flex cursor-grab items-center gap-1 rounded-lg border border-divider bg-stat-card px-2.5 py-1.5 text-caption text-text-secondary active:cursor-grabbing"><GripVertical size={12} /> {label} <span className="font-mono text-primary">{token}</span></button>)}</div>
+          <textarea ref={messageRef} className="input h-auto py-3" rows={7} value={body} onChange={(event) => setBody(event.target.value)} onDragOver={(event) => event.preventDefault()} onDrop={dropTag} placeholder="Write a clear message. Personalized fields are filled separately for every member." />
+        </div>
+
+        {selectedIds.length > 0 && ((channel !== 'push' && missingEmail > 0) || (channel !== 'email' && missingPush > 0)) && <div className="rounded-lg border border-warning/30 bg-warning/5 px-3 py-2 text-caption text-text-secondary">{channel !== 'push' && missingEmail > 0 ? `${missingEmail} selected member${missingEmail === 1 ? '' : 's'} do not have an email. ` : ''}{channel !== 'email' && missingPush > 0 ? `${missingPush} selected member${missingPush === 1 ? '' : 's'} have not enabled push notifications.` : ''}</div>}
+        {send.isError && <p className="text-caption text-danger">Delivery failed. Check the recipients and selected channel, then try again.</p>}
+        <button className="btn btn-primary w-full" disabled={!title.trim() || !body.trim() || selectedIds.length === 0 || send.isPending} onClick={() => send.mutate()}>{send.isPending ? `Sending to ${selectedIds.length} member${selectedIds.length === 1 ? '' : 's'}...` : <><Send size={16} /> Send to {selectedIds.length} member{selectedIds.length === 1 ? '' : 's'}</>}</button>
+      </div>
+
+      <aside className="card h-fit border-white/10 bg-[#111] text-white xl:sticky xl:top-6">
+        <h3 className="mb-1 text-card-heading">Live preview</h3><p className="text-caption text-white/40">Previewing {previewRecipient?.name ?? 'the first selected member'}</p>
+        <div className="mt-4 rounded-xl border border-white/10 p-4"><p className="font-medium">{personalize(title, previewRecipient) || 'Notification subject'}</p><p className="mt-2 whitespace-pre-wrap text-sm text-white/60">{personalize(body, previewRecipient) || 'Your personalized message will appear here.'}</p></div>
+        <div className="mt-4 space-y-2 text-caption text-white/50"><div className="flex justify-between"><span>Audience</span><span className="text-white/80">{selectedIds.length} selected</span></div><div className="flex justify-between"><span>Channel</span><span className="capitalize text-white/80">{channel === 'both' ? 'Email + Push' : channel}</span></div>{previewRecipient && <div className="flex justify-between gap-3"><span>Sample member</span><span className="truncate text-white/80">{previewRecipient.memberCode}</span></div>}</div>
+        {selectedRecipients.length > 0 && <div className="mt-5 border-t border-white/10 pt-4"><p className="text-caption text-white/40">Selected members</p><div className="mt-2 flex flex-wrap gap-2">{selectedRecipients.slice(0, 8).map((recipient) => <span key={recipient.id} className="rounded-md bg-white/10 px-2 py-1 text-caption">{recipient.name}</span>)}{selectedRecipients.length > 8 && <span className="rounded-md bg-white/10 px-2 py-1 text-caption">+{selectedRecipients.length - 8} more</span>}</div></div>}
+      </aside>
+    </div>}
+  </div>;
 }

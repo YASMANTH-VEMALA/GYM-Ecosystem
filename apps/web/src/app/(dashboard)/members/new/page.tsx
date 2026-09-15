@@ -12,6 +12,7 @@ export default function AddMemberPage() {
     name: '',
     phone: '',
     email: '',
+    password: '',
     dateOfBirth: '',
     gender: '',
     emergencyPhone: '',
@@ -34,6 +35,7 @@ export default function AddMemberPage() {
       const payload = {
         ...form,
         email: form.email || undefined,
+        password: form.password || undefined,
         dateOfBirth: form.dateOfBirth || undefined,
         gender: form.gender || undefined,
         emergencyPhone: form.emergencyPhone || undefined,
@@ -74,6 +76,10 @@ export default function AddMemberPage() {
           <div>
             <label htmlFor="member-email" className="input-label">Email</label>
             <input id="member-email" name="email" type="email" value={form.email} onChange={handleChange} className="input" />
+          </div>
+          <div>
+            <label htmlFor="member-password" className="input-label">Temporary Password</label>
+            <input id="member-password" name="password" type="password" minLength={8} value={form.password} onChange={handleChange} className="input" placeholder="Required with email for member app" />
           </div>
           <div>
             <label htmlFor="member-dob" className="input-label">Date of Birth</label>

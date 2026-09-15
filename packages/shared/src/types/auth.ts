@@ -1,9 +1,12 @@
 import type { Role } from '../constants/roles';
+import type { PortalSection } from '../constants/portal-sections';
 
 export interface User {
   id: string;
+  organizationId: string | null;
   gymId: string | null;
   role: Role;
+  portalSections: PortalSection[];
   phone: string;
   email: string | null;
   name: string;
@@ -15,8 +18,10 @@ export interface User {
 
 export interface AuthTokenPayload {
   userId: string;
+  organizationId: string | null;
   gymId: string | null;
   role: Role;
+  portalSections: PortalSection[];
 }
 
 export interface LoginRequest {

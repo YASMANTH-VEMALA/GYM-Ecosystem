@@ -1,16 +1,28 @@
 import { Router, Request, Response } from 'express';
-import crypto from 'crypto';
-import { authenticate, requireRole } from '../middleware/auth';
+import { authenticate, requireManagerSection, requireRole } from '../middleware/auth';
 import { gymContext } from '../middleware/gym-context';
 import * as checkinService from '../services/checkin.service';
 import prisma from '@gymstack/db';
-import { env } from '../config/env';
+import { validate } from '../middleware/validate';
+import { z } from 'zod';
+import { verifyBranchQrToken } from '../utils/branch-qr';
+
+const kioskCheckInSchema = z.object({ memberCode: z.string().trim().min(1).max(20) });
+const qrCheckInSchema = z.object({
+  gymId: z.string().uuid(),
+  token: z.string().regex(/^[0-9a-f]{64}$/i).optional(),
+  hash: z.string().regex(/^[0-9a-f]{64}$/i).optional(),
+}).refine((value) => Boolean(value.token || value.hash), { message: 'token is required', path: ['token'] });
+const syncCheckInsSchema = z.object({
+  checkIns: z.array(z.object({ memberCode: z.string().trim().min(1).max(20), timestamp: z.string().datetime({ offset: true }) })).max(500),
+});
 
 const router = Router();
 router.use(authenticate, gymContext);
+router.use(requireManagerSection('checkins'));
 
 // ─── Kiosk check-in (receptionist) ────────────────────
-router.post('/', requireRole('gym_owner', 'receptionist'), async (req: Request, res: Response) => {
+router.post('/', requireRole('gym_owner', 'manager', 'receptionist'), validate(kioskCheckInSchema), async (req: Request, res: Response) => {
   try {
     const { memberCode } = req.body;
     const result = await checkinService.checkIn(memberCode, req.gymId!);
@@ -21,21 +33,18 @@ router.post('/', requireRole('gym_owner', 'receptionist'), async (req: Request, 
 });
 
 // ─── QR check-in (mobile app) ─────────────────────────
-router.post('/qr', async (req: Request, res: Response) => {
+router.post('/qr', validate(qrCheckInSchema), async (req: Request, res: Response) => {
   try {
-    const { gymId, hash } = req.body;
-    if (!gymId || !hash) {
-      res.status(400).json({ error: 'gymId and hash are required' });
+    const { gymId, token, hash } = req.body;
+    const suppliedToken = token ?? hash ?? '';
+
+    const gym = await prisma.gym.findUnique({ where: { id: gymId }, select: { qrSecret: true, isActive: true } });
+    if (!gym?.isActive) {
+      res.status(404).json({ error: 'Gym not found or inactive' });
       return;
     }
 
-    // Validate HMAC — gym QR contains gymId + HMAC(gymId, secret)
-    const expectedHash = crypto
-      .createHmac('sha256', env.JWT_SECRET)
-      .update(gymId)
-      .digest('hex');
-
-    if (hash !== expectedHash) {
+    if (!verifyBranchQrToken(gymId, gym.qrSecret, 'attendance', suppliedToken)) {
       res.status(403).json({ error: 'Invalid QR code' });
       return;
     }
@@ -56,7 +65,7 @@ router.post('/qr', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/sync', requireRole('gym_owner', 'receptionist'), async (req: Request, res: Response) => {
+router.post('/sync', requireRole('gym_owner', 'manager', 'receptionist'), validate(syncCheckInsSchema), async (req: Request, res: Response) => {
   try {
     const { checkIns } = req.body;
     const result = await checkinService.syncOfflineCheckIns(req.gymId!, checkIns);
@@ -66,7 +75,7 @@ router.post('/sync', requireRole('gym_owner', 'receptionist'), async (req: Reque
   }
 });
 
-router.get('/today', requireRole('gym_owner', 'receptionist'), async (req: Request, res: Response) => {
+router.get('/today', requireRole('gym_owner', 'manager', 'receptionist'), async (req: Request, res: Response) => {
   try {
     const checkIns = await checkinService.getTodayCheckIns(req.gymId!);
     res.json({ checkIns });
@@ -75,7 +84,7 @@ router.get('/today', requireRole('gym_owner', 'receptionist'), async (req: Reque
   }
 });
 
-router.get('/by-date', requireRole('gym_owner', 'receptionist'), async (req: Request, res: Response) => {
+router.get('/by-date', requireRole('gym_owner', 'manager', 'receptionist'), async (req: Request, res: Response) => {
   try {
     const date = req.query.date as string | undefined;
     const checkIns = await checkinService.getCheckInsByDate(req.gymId!, date);

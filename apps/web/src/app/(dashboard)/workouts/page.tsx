@@ -68,7 +68,7 @@ export default function WorkoutsPage() {
 
   const { data: plans, isLoading } = useQuery({
     queryKey: ['workout-plans'],
-    queryFn: () => apiClient.get('/workouts').then((r) => r.data),
+    queryFn: () => apiClient.get('/workouts').then((r) => r.data.plans),
   });
 
   const deleteMutation = useMutation({
@@ -270,7 +270,7 @@ function WorkoutPlanForm({ onSaved, onCancel }: { onSaved: () => void; onCancel:
 
   const { data: exercises } = useQuery({
     queryKey: ['exercises', exerciseSearch],
-    queryFn: () => apiClient.get('/workouts/exercises', { params: { search: exerciseSearch || undefined } }).then((r) => r.data),
+    queryFn: () => apiClient.get('/workouts/exercises', { params: { search: exerciseSearch || undefined } }).then((r) => r.data.exercises),
     enabled: exerciseSearch.length > 1,
   });
 

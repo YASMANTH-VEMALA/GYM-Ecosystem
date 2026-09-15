@@ -1,16 +1,35 @@
 generator client {
   provider = "prisma-client-js"
+  output   = "../generated/client"
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Organization {
+  id         String   @id @default(uuid()) @db.Uuid
+  name       String   @db.VarChar(200)
+  logoUrl    String?  @map("logo_url")
+  ownerName  String   @map("owner_name") @db.VarChar(200)
+  ownerEmail String?  @map("owner_email") @db.VarChar(255)
+  ownerPhone String   @map("owner_phone") @db.VarChar(15)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  branches Gym[]
+  users    User[]
+
+  @@map("organizations")
 }
 
 // ─── Gym (White-label tenant) ──────────────────────────
 
 model Gym {
   id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
   name           String   @db.VarChar(200)
   slug           String   @unique @db.VarChar(100)
   subdomain      String   @unique @db.VarChar(150)
@@ -27,9 +46,11 @@ model Gym {
   gstin          String?  @db.VarChar(15)
   isActive       Boolean  @default(true) @map("is_active")
   timezone       String   @default("Asia/Kolkata") @db.VarChar(50)
+  qrSecret       String   @default(uuid()) @map("qr_secret") @db.VarChar(64)
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
+  organization       Organization              @relation(fields: [organizationId], references: [id])
   users              User[]
   members            Member[]
   membershipPlans    MembershipPlan[]
@@ -42,6 +63,7 @@ model Gym {
   saasSubscription   SaasSubscription?
 
   @@index([slug])
+  @@index([organizationId])
   @@map("gyms")
 }
 
@@ -49,8 +71,11 @@ model Gym {
 
 model User {
   id           String    @id @default(uuid()) @db.Uuid
+  authId       String?   @unique @map("auth_id") @db.Uuid
+  organizationId String? @map("organization_id") @db.Uuid
   gymId        String?   @map("gym_id") @db.Uuid
   role         String    @db.VarChar(20)
+  portalSections String[] @default([]) @map("portal_sections")
   phone        String    @db.VarChar(15)
   email        String?   @db.VarChar(255)
   passwordHash String    @map("password_hash") @db.VarChar(255)
@@ -62,6 +87,7 @@ model User {
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
 
+  organization            Organization?            @relation(fields: [organizationId], references: [id])
   gym                     Gym?                     @relation(fields: [gymId], references: [id], onDelete: Cascade)
   member                  Member?
   createdWorkoutPlans     WorkoutPlan[]             @relation("WorkoutPlanCreator")
@@ -69,11 +95,29 @@ model User {
   createdDietCharts       DietChart[]               @relation("DietChartCreator")
   dietAssignments         MemberDietAssignment[]    @relation("DietAssigner")
   recordedBodyStats       BodyStat[]                @relation("BodyStatRecorder")
+  webPushSubscriptions    WebPushSubscription[]
 
   @@unique([phone, gymId])
   @@index([gymId, role])
+  @@index([organizationId, role])
   @@index([phone])
   @@map("users")
+}
+
+model WebPushSubscription {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?  @map("user_agent") @db.VarChar(500)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("web_push_subscriptions")
 }
 
 // ─── Member ────────────────────────────────────────────
@@ -218,6 +262,7 @@ model Exercise {
   workoutPlanExercises WorkoutPlanExercise[]
 
   @@index([muscleGroup])
+  @@unique([name, muscleGroup])
   @@map("exercises")
 }
 
@@ -395,7 +440,7 @@ model NotificationLog {
 
 model SaasPlan {
   id           String   @id @default(uuid()) @db.Uuid
-  name         String   @db.VarChar(100)
+  name         String   @unique @db.VarChar(100)
   priceMonthly Decimal  @map("price_monthly") @db.Decimal(10, 2)
   maxMembers   Int?     @map("max_members")
   maxStaff     Int?     @map("max_staff")

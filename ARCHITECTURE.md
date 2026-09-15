@@ -27,7 +27,7 @@ GymOS uses an automated omnichannel communication approach.
 - Automated distribution happens via centralized Cron Jobs (e.g., `feeReminder.job.ts`) running globally on the Node.js API server every morning.
 
 # File Storage
-We utilize Cloudflare R2 as our S3-compatible Blob storage for holding media logic:
+We utilize Supabase Storage for holding media assets:
 - Gym Logos
 - Member Profile Avatars
 - Generating Payment PDF Invoices and hosting them securely.
