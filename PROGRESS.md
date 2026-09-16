@@ -29,13 +29,14 @@
 - [x] Installed member PWA Web Push subscriptions, background alerts, click routing, and Email/Push/Both delivery
 - [x] Notification recipient checklist, payment-due audience filters, exact bulk selection, and draggable personalized merge tags
 - [x] Member alert history restricted to successful deliveries, with provider failure reasons visible to admins
+- [x] Vercel Web Analytics and Speed Insights instrumentation
 
 ## Website release setup
 
 - [ ] Rotate all credentials that were pasted into chat before hosting
 - [ ] Verify a sending domain in Resend and set `RESEND_FROM_EMAIL`
 - [ ] Deploy the API through `render.yaml`
-- [ ] Deploy the web workspace through `vercel.json`
+- [ ] Deploy `apps/web` as the Vercel web project and connect it to the Render API
 
 ## Deferred by scope
 

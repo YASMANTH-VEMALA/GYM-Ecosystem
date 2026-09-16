@@ -65,9 +65,32 @@ Keep exactly one API instance while cron jobs run inside the web process. If the
 
 Verify `GET https://YOUR-RENDER-SERVICE.onrender.com/api/health`. It must report both `status: ok` and `database: connected`.
 
+Do not deploy `apps/api` as a separate Vercel project. It is a persistent Express server with in-process scheduled jobs, while Vercel Functions are request-scoped. A Vercel API project will fail to start correctly and cannot reliably run the scheduled jobs.
+
+Use only these API environment variables on Render:
+
+| Key | Value |
+| --- | --- |
+| `NODE_ENV` | `production` |
+| `DATABASE_URL` | Supabase pooled PostgreSQL URL (port 6543) |
+| `DIRECT_URL` | Supabase direct/session PostgreSQL URL (port 5432) |
+| `SUPABASE_URL` | `https://YOUR_PROJECT_REF.supabase.co` |
+| `SUPABASE_SECRET_KEY` | Supabase secret key (server only) |
+| `SUPABASE_LOGO_BUCKET` | `gymstack-logos` (optional) |
+| `QR_ENCRYPTION_KEY` | Persistent random value of at least 32 characters |
+| `WEB_URL` | Final Vercel web origin, with no trailing slash |
+| `ENABLE_CRON_JOBS` | `true` on exactly one API instance |
+| `RESEND_API_KEY` | Resend API key (optional until email is enabled) |
+| `RESEND_FROM_EMAIL` | Verified sender, e.g. `GymOS <notifications@example.com>` |
+| `WEB_PUSH_VAPID_PUBLIC_KEY` | Persistent VAPID public key (optional until push is enabled) |
+| `WEB_PUSH_VAPID_PRIVATE_KEY` | Matching VAPID private key |
+| `WEB_PUSH_VAPID_SUBJECT` | `mailto:support@example.com` |
+
+Render supplies `PORT`; do not set `API_PORT`, `API_URL`, `NEXT_PUBLIC_API_URL`, or any `NEXT_PUBLIC_*` variable there. Legacy `JWT_*`, Redis/Upstash, Google OAuth, Supabase JWKS, publishable/service-role aliases, and `WEB_ORIGIN` variables shown in older deployments are not read by the current API.
+
 ## 3. Vercel web app
 
-Import the repository into Vercel and keep the repository root as the project root. `vercel.json` builds the `web` workspace.
+Create one Vercel project for the website and set its **Root Directory** to `apps/web`. Do not create a second Vercel project for `apps/api`.
 
 Set:
 
@@ -76,6 +99,16 @@ Set:
 - `API_URL`: Render service origin without a trailing `/api`
 
 Do not set `NEXT_PUBLIC_API_URL` in production. The browser should call same-origin `/api/*`; Next.js proxies those requests to `API_URL`.
+
+The complete Vercel web environment is:
+
+| Key | Value |
+| --- | --- |
+| `API_URL` | `https://YOUR-RENDER-SERVICE.onrender.com` |
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://YOUR_PROJECT_REF.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase publishable key |
+
+Do not place database URLs, Supabase secret/service-role keys, VAPID private keys, Resend keys, or other server secrets in the web project. Vercel Analytics and Speed Insights require no environment variables; their components are included in the root web layout.
 
 After changing any Vercel environment variable, redeploy the web project.
 

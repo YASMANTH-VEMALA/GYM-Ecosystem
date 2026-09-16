@@ -35,6 +35,7 @@ The browser receives only the Supabase URL and publishable key. It uses Supabase
 - Gym settings and persisted white-label branding
 - Per-branch admission and attendance QR codes; public self-admission and authenticated attendance confirmation
 - Owner-managed company and branch logos stored in Supabase Storage, with branch override and company fallback
+- Vercel Web Analytics and Speed Insights instrumentation in the web application
 
 ## Public and branch QR routes
 
