@@ -3,9 +3,9 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "dev": "dotenv -e ../../.env -- tsx watch src/index.ts",
+    "dev": "dotenv -e ../../.env -- tsx watch src/server.ts",
     "build": "tsc",
-    "start": "tsx src/index.ts",
+    "start": "tsx src/server.ts",
     "bootstrap:owner": "dotenv -e ../../.env -- tsx src/scripts/bootstrap-owner.ts",
     "smoke:e2e": "dotenv -e ../../.env -- tsx src/scripts/smoke-e2e.ts",
     "lint": "tsc --noEmit"
