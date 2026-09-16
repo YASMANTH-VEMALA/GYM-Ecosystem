@@ -2,6 +2,7 @@
   "name": "@gymstack/db",
   "version": "0.0.1",
   "private": true,
+  "type": "module",
   "main": "./src/client.ts",
   "types": "./src/client.ts",
   "scripts": {
