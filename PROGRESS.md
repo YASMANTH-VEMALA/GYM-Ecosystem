@@ -12,7 +12,7 @@
 - [x] Persistent, rotatable gym QR secret
 - [x] Supabase REST roles blocked from direct Prisma table access
 - [x] Database-backed API health check and graceful shutdown
-- [x] Render and Vercel deployment configuration
+- [x] Separate Vercel deployment configurations for the web app and serverless API
 - [x] Production API and web builds passing
 - [x] Production dependency audit reports zero known vulnerabilities
 - [x] Disposable authenticated API smoke test passed 29 checks, including branch isolation and manager RBAC, and cleaned up all test records
@@ -35,8 +35,8 @@
 
 - [ ] Rotate all credentials that were pasted into chat before hosting
 - [ ] Verify a sending domain in Resend and set `RESEND_FROM_EMAIL`
-- [ ] Deploy the API through `render.yaml`
-- [ ] Deploy `apps/web` as the Vercel web project and connect it to the Render API
+- [ ] Deploy `apps/api` as the Vercel API project
+- [ ] Deploy `apps/web` as the Vercel web project and connect it to the Vercel API
 
 ## Deferred by scope
 

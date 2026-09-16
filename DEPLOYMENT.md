@@ -1,13 +1,13 @@
 # Production deployment
 
-The supported first production layout is:
+The production layout is:
 
 - Web/admin/kiosk/member app: Vercel
-- Express API and scheduled email jobs: Render Starter (always on)
+- Express API: a separate Vercel project using a serverless entry point
 - PostgreSQL and authentication: Supabase
 - Transactional and campaign email: Resend
 
-Railway can also run the API, but Render is the recommended first deployment because this repository includes a complete `render.yaml`, a pre-deploy migration command, and a database-backed health check.
+The web and API are two Vercel projects created from the same repository, with different root directories.
 
 ## Security before deployment
 
@@ -41,11 +41,11 @@ npm run bootstrap:owner
 
 The command generates a strong temporary password when one is not supplied. Do not add the bootstrap values to a hosted service.
 
-## 2. Render API
+## 2. Vercel API
 
-Create a Render Blueprint from this repository. The checked-in `render.yaml` uses a paid Starter web service because sleeping/free instances do not reliably run in-process scheduled jobs.
+Create a Vercel project with **Root Directory** set to `apps/api`. The checked-in `apps/api/vercel.json` installs the monorepo dependencies, generates Prisma Client, and routes requests to the serverless Express entry point.
 
-Set these secret environment variables in Render:
+Set these environment variables in the API Vercel project:
 
 - `DATABASE_URL`: Supabase pooled URL (port 6543)
 - `DIRECT_URL`: Supabase session/direct URL (port 5432), used by migrations
@@ -59,15 +59,9 @@ Set these secret environment variables in Render:
 - `WEB_PUSH_VAPID_SUBJECT`: a `mailto:` address on your support domain
 - `WEB_URL`: final Vercel origin, such as `https://gymos.example.com`
 
-Do not copy a local Windows `sslrootcert=C:/...` parameter into Render. Use Supabase's cloud connection string with `sslmode=require`, or mount the CA certificate and provide a valid Linux path.
+Do not copy a local Windows `sslrootcert=C:/...` parameter into Vercel. Use Supabase's cloud connection string with `sslmode=require`.
 
-Keep exactly one API instance while cron jobs run inside the web process. If the API is scaled horizontally, move schedules to one dedicated worker and set `ENABLE_CRON_JOBS=false` on web instances.
-
-Verify `GET https://YOUR-RENDER-SERVICE.onrender.com/api/health`. It must report both `status: ok` and `database: connected`.
-
-Do not deploy `apps/api` as a separate Vercel project. It is a persistent Express server with in-process scheduled jobs, while Vercel Functions are request-scoped. A Vercel API project will fail to start correctly and cannot reliably run the scheduled jobs.
-
-Use only these API environment variables on Render:
+Use only these API environment variables:
 
 | Key | Value |
 | --- | --- |
@@ -79,14 +73,18 @@ Use only these API environment variables on Render:
 | `SUPABASE_LOGO_BUCKET` | `gymstack-logos` (optional) |
 | `QR_ENCRYPTION_KEY` | Persistent random value of at least 32 characters |
 | `WEB_URL` | Final Vercel web origin, with no trailing slash |
-| `ENABLE_CRON_JOBS` | `true` on exactly one API instance |
+| `ENABLE_CRON_JOBS` | `false` |
 | `RESEND_API_KEY` | Resend API key (optional until email is enabled) |
 | `RESEND_FROM_EMAIL` | Verified sender, e.g. `GymOS <notifications@example.com>` |
 | `WEB_PUSH_VAPID_PUBLIC_KEY` | Persistent VAPID public key (optional until push is enabled) |
 | `WEB_PUSH_VAPID_PRIVATE_KEY` | Matching VAPID private key |
 | `WEB_PUSH_VAPID_SUBJECT` | `mailto:support@example.com` |
 
-Render supplies `PORT`; do not set `API_PORT`, `API_URL`, `NEXT_PUBLIC_API_URL`, or any `NEXT_PUBLIC_*` variable there. Legacy `JWT_*`, Redis/Upstash, Google OAuth, Supabase JWKS, publishable/service-role aliases, and `WEB_ORIGIN` variables shown in older deployments are not read by the current API.
+Do not set `API_PORT`, `PORT`, `API_URL`, `NEXT_PUBLIC_API_URL`, or any `NEXT_PUBLIC_*` variable in the API project. Legacy `JWT_*`, Redis/Upstash, Google OAuth, Supabase JWKS, publishable/service-role aliases, and `WEB_ORIGIN` variables shown in older deployments are not read by the current API.
+
+Verify `GET https://YOUR-API-PROJECT.vercel.app/api/health`. It must report both `status: ok` and `database: connected`.
+
+Vercel Functions cannot run the in-process schedules in `src/jobs`. With `ENABLE_CRON_JOBS=false`, login and normal API requests work, but automated reminders, birthdays, weekly summaries, and scheduled notification delivery require a later migration to secured HTTP handlers plus Vercel Cron. Vercel Hobby cron frequency limits may not support the current minute-level scheduled-notification worker.
 
 ## 3. Vercel web app
 
@@ -96,7 +94,7 @@ Set:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
-- `API_URL`: Render service origin without a trailing `/api`
+- `API_URL`: Vercel API project origin without a trailing `/api`
 
 Do not set `NEXT_PUBLIC_API_URL` in production. The browser should call same-origin `/api/*`; Next.js proxies those requests to `API_URL`.
 
@@ -104,7 +102,7 @@ The complete Vercel web environment is:
 
 | Key | Value |
 | --- | --- |
-| `API_URL` | `https://YOUR-RENDER-SERVICE.onrender.com` |
+| `API_URL` | `https://YOUR-API-PROJECT.vercel.app` |
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://YOUR_PROJECT_REF.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase publishable key |
 

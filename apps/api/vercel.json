@@ -1,6 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "express",
   "installCommand": "cd ../.. && npm ci",
-  "buildCommand": "cd ../.. && npm run db:generate && npm run build --workspace=api"
+  "buildCommand": "cd ../.. && npm run db:generate",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api" }
+  ]
 }

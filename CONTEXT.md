@@ -9,7 +9,7 @@ GymOS is a multi-tenant gym management SaaS for Indian gyms.
 - Database: Supabase PostgreSQL through Prisma (`packages/db`)
 - Authentication: Supabase Auth; the API validates bearer sessions and maps them to organization- or branch-scoped local users
 - Notifications: Resend email, standards-based PWA Web Push, and persisted `notifications_log` records
-- Recommended hosting: Vercel for web, Render Starter for API and scheduled jobs
+- Production hosting: separate Vercel projects for the Next.js web app and serverless Express API
 
 ## Data boundary
 
