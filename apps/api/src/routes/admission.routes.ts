@@ -50,7 +50,8 @@ router.post('/:gymId', admissionLimiter, validate(createMemberSchema), async (re
     });
   } catch (error) {
     const message = memberService.friendlyMemberCreationError(error);
-    res.status(message.includes('phone number already exists') ? 409 : 400).json({ error: message });
+    const isConflict = message.includes('phone number already exists') || message.includes('already linked to an account');
+    res.status(isConflict ? 409 : 400).json({ error: message });
   }
 });
 

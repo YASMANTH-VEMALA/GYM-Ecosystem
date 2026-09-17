@@ -22,7 +22,7 @@ export function PWAInstallBanner({
     <>
       {/* Install Banner */}
       {showBanner && !isStandalone && (isInstallable || isIOS) && (
-        <div className="px-5 mb-6 animate-fade-in">
+        <div className="mb-6 mt-4 px-5 animate-fade-in">
           <div className="relative overflow-hidden bg-gradient-to-r from-violet-600/10 to-cyan-600/10 border border-white/[0.08] rounded-2xl p-4 flex items-center gap-4">
             <div className="absolute top-0 right-0 w-24 h-24 bg-violet-500/10 blur-xl rounded-full pointer-events-none" />
             <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center flex-shrink-0 text-violet-400">
@@ -30,7 +30,7 @@ export function PWAInstallBanner({
             </div>
             <div className="flex-1">
               <h3 className="text-sm font-semibold text-white">Install GymOS App</h3>
-              <p className="text-[11px] text-[#888] mt-0.5">Add to your home screen for quick offline access.</p>
+              <p className="text-[11px] text-[#888] mt-0.5">Create a home-screen shortcut for quick access.</p>
             </div>
             <div className="flex flex-col gap-2 items-end z-10">
               <button

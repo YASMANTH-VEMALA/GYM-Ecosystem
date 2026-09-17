@@ -54,14 +54,14 @@ export default function AdmissionPage() {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError('');
-    if (form.email && !form.password) { setError('Create a password to use your email for the member app.'); return; }
-    if (!form.email && form.password) { setError('Enter your email address to create a member app login.'); return; }
-    if (form.password && form.password !== form.confirmPassword) { setError('Passwords do not match.'); return; }
+    if (!form.email.trim()) { setError('Enter your email address to create your member login.'); return; }
+    if (!form.password) { setError('Create a password for your member login.'); return; }
+    if (form.password !== form.confirmPassword) { setError('Passwords do not match.'); return; }
     setSubmitting(true);
     try {
       const payload = {
-        name: form.name.trim(), phone: form.phone, email: form.email.trim().toLowerCase() || undefined,
-        password: form.password || undefined, dateOfBirth: form.dateOfBirth || undefined,
+        name: form.name.trim(), phone: form.phone, email: form.email.trim().toLowerCase(),
+        password: form.password, dateOfBirth: form.dateOfBirth || undefined,
         gender: form.gender || undefined, emergencyPhone: form.emergencyPhone || undefined,
         bloodGroup: form.bloodGroup || undefined, notes: form.notes.trim() || undefined,
       };
@@ -77,7 +77,7 @@ export default function AdmissionPage() {
 
   if (loadingBranch) return <AdmissionShell accent="#E85D04"><div className="space-y-4"><div className="h-20 rounded-xl bg-gray-100 animate-pulse" /><div className="h-96 rounded-xl bg-gray-100 animate-pulse" /></div></AdmissionShell>;
   if (!branch) return <AdmissionShell accent={accent}><div className="py-16 text-center"><Building2 className="mx-auto text-text-muted" size={42} /><h1 className="mt-4 text-xl font-medium">Admission link unavailable</h1><p className="mx-auto mt-2 max-w-sm text-body text-text-secondary">{error || 'Ask the branch team for a new QR code.'}</p></div></AdmissionShell>;
-  if (result) return <AdmissionShell accent={accent}><div className="py-12 text-center"><div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-green-50 text-success"><CheckCircle2 size={34} /></div><p className="mt-5 text-caption text-text-secondary">ADMISSION COMPLETE</p><h1 className="mt-2 text-2xl font-medium">Welcome, {result.member.name}</h1><p className="mt-2 text-body text-text-secondary">You have been added to {result.branch.name}.</p><div className="mx-auto mt-6 max-w-xs rounded-card bg-stat-card p-5"><p className="text-caption text-text-secondary">Your member code</p><p className="mt-2 font-mono text-2xl font-medium tracking-wider">{result.member.memberCode}</p></div>{form.email && <a href="/login" className="mt-6 inline-flex h-12 items-center justify-center rounded-btn px-6 text-white" style={{ backgroundColor: accent }}>Open member app</a>}<p className="mx-auto mt-5 max-w-sm text-caption text-text-muted">Keep your member code. The branch team can help you select a plan and complete payment.</p></div></AdmissionShell>;
+  if (result) return <AdmissionShell accent={accent}><div className="py-12 text-center"><div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-green-50 text-success"><CheckCircle2 size={34} /></div><p className="mt-5 text-caption text-text-secondary">ADMISSION COMPLETE</p><h1 className="mt-2 text-2xl font-medium">Welcome, {result.member.name}</h1><p className="mt-2 text-body text-text-secondary">You have been added to {result.branch.name}.</p><div className="mx-auto mt-6 max-w-xs rounded-card bg-stat-card p-5"><p className="text-caption text-text-secondary">Your member code</p><p className="mt-2 font-mono text-2xl font-medium tracking-wider">{result.member.memberCode}</p></div><a href="/login" className="mt-6 inline-flex h-12 items-center justify-center rounded-btn px-6 text-white" style={{ backgroundColor: accent }}>Open member app</a><p className="mx-auto mt-5 max-w-sm text-caption text-text-muted">Sign in with your email and password. You will stay signed in on this device until you choose Sign out.</p></div></AdmissionShell>;
 
   return <AdmissionShell accent={accent}>
     <header className="mb-7 flex items-center gap-3 border-b border-divider pb-6">
@@ -94,12 +94,12 @@ export default function AdmissionPage() {
         <Field label="Blood group"><select className="input" value={form.bloodGroup} onChange={(e) => update('bloodGroup', e.target.value)}><option value="">Select</option>{['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((value) => <option key={value}>{value}</option>)}</select></Field>
         <Field label="Emergency mobile"><input className="input font-mono" inputMode="numeric" pattern="[6-9][0-9]{9}" maxLength={10} placeholder="10-digit number" value={form.emergencyPhone} onChange={(e) => update('emergencyPhone', e.target.value.replace(/\D/g, '').slice(0, 10))} /></Field>
       </div>
-      <div className="border-t border-divider pt-6"><h2 className="text-section-heading">Member app access <span className="font-normal text-text-muted">(optional)</span></h2><p className="mt-1 text-caption text-text-muted">Add both email and password to sign in and mark QR attendance.</p></div>
+      <div className="border-t border-divider pt-6"><h2 className="text-section-heading">Member app access</h2><p className="mt-1 text-caption text-text-muted">Your email and password are required to sign in, mark QR attendance, and stay connected to your gym.</p></div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Email address"><input className="input" type="email" autoComplete="email" value={form.email} onChange={(e) => update('email', e.target.value)} /></Field>
+        <Field label="Email address *"><input className="input" required type="email" autoComplete="email" value={form.email} onChange={(e) => update('email', e.target.value)} /></Field>
         <div className="hidden sm:block" />
-        <Field label="Create password"><input className="input" type="password" minLength={8} maxLength={72} autoComplete="new-password" placeholder="At least 8 characters" value={form.password} onChange={(e) => update('password', e.target.value)} /></Field>
-        <Field label="Confirm password"><input className="input" type="password" minLength={8} maxLength={72} autoComplete="new-password" value={form.confirmPassword} onChange={(e) => update('confirmPassword', e.target.value)} /></Field>
+        <Field label="Create password *"><input className="input" required type="password" minLength={8} maxLength={72} autoComplete="new-password" placeholder="At least 8 characters" value={form.password} onChange={(e) => update('password', e.target.value)} /></Field>
+        <Field label="Confirm password *"><input className="input" required type="password" minLength={8} maxLength={72} autoComplete="new-password" value={form.confirmPassword} onChange={(e) => update('confirmPassword', e.target.value)} /></Field>
       </div>
       <Field label="Health notes or anything the branch should know"><textarea className="input h-auto resize-none py-3" rows={3} maxLength={1000} value={form.notes} onChange={(e) => update('notes', e.target.value)} /></Field>
       {error && <div role="alert" className="rounded-btn border border-danger-border bg-danger-bg px-4 py-3 text-caption text-danger">{error}</div>}

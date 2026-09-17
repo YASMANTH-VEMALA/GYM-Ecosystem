@@ -2,12 +2,13 @@
   "name": "GymOS Member App",
   "short_name": "GymOS",
   "description": "Your personal gym companion and workout manager",
+  "id": "/member-app",
   "start_url": "/member-app",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0F0F0F",
   "theme_color": "#0F0F0F",
-  "scope": "/member-app",
+  "scope": "/",
   "icons": [
     {
       "src": "/icon-192.png",

@@ -5,8 +5,8 @@ export const createMemberSchema = z.object({
   phone: z
     .string()
     .regex(/^[6-9]\d{9}$/, 'Invalid Indian phone number'),
-  email: z.string().trim().toLowerCase().email().optional(),
-  password: z.string().min(8).max(72).optional(),
+  email: z.string().trim().toLowerCase().email(),
+  password: z.string().min(8).max(72),
   dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a valid date').optional(),
   gender: z.enum(['male', 'female', 'other']).optional(),
   emergencyPhone: z.string().regex(/^[6-9]\d{9}$/, 'Invalid Indian phone number').optional(),

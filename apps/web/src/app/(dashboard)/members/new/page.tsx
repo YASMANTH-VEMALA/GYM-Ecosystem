@@ -34,8 +34,8 @@ export default function AddMemberPage() {
     try {
       const payload = {
         ...form,
-        email: form.email || undefined,
-        password: form.password || undefined,
+        email: form.email.trim().toLowerCase(),
+        password: form.password,
         dateOfBirth: form.dateOfBirth || undefined,
         gender: form.gender || undefined,
         emergencyPhone: form.emergencyPhone || undefined,
@@ -74,12 +74,12 @@ export default function AddMemberPage() {
             <input id="member-phone" name="phone" value={form.phone} onChange={handleChange} required maxLength={10} placeholder="10-digit number" className="input font-mono" />
           </div>
           <div>
-            <label htmlFor="member-email" className="input-label">Email</label>
-            <input id="member-email" name="email" type="email" value={form.email} onChange={handleChange} className="input" />
+            <label htmlFor="member-email" className="input-label">Email <span className="text-danger">*</span></label>
+            <input id="member-email" name="email" type="email" value={form.email} onChange={handleChange} required autoComplete="email" className="input" />
           </div>
           <div>
-            <label htmlFor="member-password" className="input-label">Temporary Password</label>
-            <input id="member-password" name="password" type="password" minLength={8} value={form.password} onChange={handleChange} className="input" placeholder="Required with email for member app" />
+            <label htmlFor="member-password" className="input-label">Temporary Password <span className="text-danger">*</span></label>
+            <input id="member-password" name="password" type="password" minLength={8} maxLength={72} value={form.password} onChange={handleChange} required autoComplete="new-password" className="input" placeholder="At least 8 characters" />
           </div>
           <div>
             <label htmlFor="member-dob" className="input-label">Date of Birth</label>

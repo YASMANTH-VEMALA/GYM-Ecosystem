@@ -12,6 +12,7 @@ const emails = {
   manager: `manager-${slug}@example.com`,
   staff: `staff-${slug}@example.com`,
   member: `member-${slug}@example.com`,
+  admittedMember: `admitted-${slug}@example.com`,
 };
 const authIds: string[] = [];
 let gymId: string | undefined;
@@ -186,12 +187,13 @@ async function main() {
   await publicRequest(`/admissions/${admissionPayload.gymId}?token=${'0'.repeat(64)}`, undefined, 404);
   const admissionPhone = `6${suffix}5`.slice(0, 10);
   const admitted = await publicRequest(`/admissions/${admissionPayload.gymId}?token=${admissionPayload.token}`, {
-    method: 'POST', body: JSON.stringify({ name: 'QR Admission Member', phone: admissionPhone, bloodGroup: 'O+' }),
+    method: 'POST', body: JSON.stringify({ name: 'QR Admission Member', phone: admissionPhone, email: emails.admittedMember, password, bloodGroup: 'O+' }),
   }, 201);
-  const admittedRecord = await prisma.member.findUnique({ where: { id: admitted.member.id } });
+  const admittedRecord = await prisma.member.findUnique({ where: { id: admitted.member.id }, include: { user: { select: { authId: true } } } });
+  if (admittedRecord?.user.authId) authIds.push(admittedRecord.user.authId);
   if (admittedRecord?.gymId !== gym.id) throw new Error('QR admission was assigned to the wrong branch');
   await publicRequest(`/admissions/${admissionPayload.gymId}?token=${admissionPayload.token}`, {
-    method: 'POST', body: JSON.stringify({ name: 'Duplicate QR Member', phone: admissionPhone }),
+    method: 'POST', body: JSON.stringify({ name: 'Duplicate QR Member', phone: admissionPhone, email: emails.admittedMember, password }),
   }, 409);
   const memberToken = await tokenFor(emails.member);
   const pushStatus = await request('/push/status', memberToken);

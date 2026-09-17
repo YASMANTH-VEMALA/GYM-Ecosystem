@@ -111,20 +111,17 @@ export async function getMemberById(memberId: string, gymId: string) {
 }
 
 export async function createMember(gymId: string, data: CreateMemberInput) {
-  const defaultPassword = await bcrypt.hash(data.password ?? data.phone.slice(-6), 12);
+  const defaultPassword = await bcrypt.hash(data.password, 12);
   const gym = await prisma.gym.findUnique({ where: { id: gymId }, select: { organizationId: true } });
   if (!gym) throw new Error('Branch not found');
 
-  if ((data.email && !data.password) || (!data.email && data.password)) {
-    throw new Error('Email and temporary password must be provided together for member app access');
-  }
-
-  let authId: string | null = null;
-  if (data.email && data.password) {
-    const { data: authData, error } = await supabaseAdmin.auth.admin.createUser({ email: data.email, password: data.password, email_confirm: true });
-    if (error || !authData.user) throw new Error(error?.message ?? 'Could not create member login');
-    authId = authData.user.id;
-  }
+  const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+    email: data.email,
+    password: data.password,
+    email_confirm: true,
+  });
+  if (authError || !authData.user) throw new Error(authError?.message ?? 'Could not create member login');
+  const authId = authData.user.id;
 
   try {
     const result = await prisma.$transaction(async (tx) => {
@@ -162,7 +159,7 @@ export async function createMember(gymId: string, data: CreateMemberInput) {
 
     return { ...result.member, user: { name: result.user.name, phone: result.user.phone } };
   } catch (error) {
-    if (authId) await supabaseAdmin.auth.admin.deleteUser(authId);
+    await supabaseAdmin.auth.admin.deleteUser(authId);
     throw error;
   }
 }

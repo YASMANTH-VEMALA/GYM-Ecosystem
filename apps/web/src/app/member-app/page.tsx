@@ -28,6 +28,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { BottomNav, type Tab } from '@/components/member-app/BottomNav';
 import { QRModal } from '@/components/member-app/QRModal';
 import { PullToRefresh } from '@/components/member-app/PullToRefresh';
+import { PWAInstallBanner } from '@/components/member-app/PWAInstallBanner';
 import {
   HomeTabSkeleton,
   NotificationsTabSkeleton,
@@ -112,6 +113,10 @@ type Notification = {
 type CheckInPayload = { gymId: string; token: string };
 type CheckInNotice = { type: 'success' | 'error'; message: string };
 
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+}
+
 const fallbackAccent = '#E85D04';
 const pendingCheckInKey = 'gymos-pending-checkin';
 
@@ -166,6 +171,11 @@ export default function MemberAppPage() {
   const [qrOpen, setQrOpen] = useState(false);
   const [pendingCheckIn, setPendingCheckIn] = useState<CheckInPayload | null>(null);
   const [checkInNotice, setCheckInNotice] = useState<CheckInNotice | null>(null);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [isStandalone, setIsStandalone] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const [showIOSTutorial, setShowIOSTutorial] = useState(false);
   const checkInStarted = useRef(false);
 
   useEffect(() => {
@@ -182,6 +192,49 @@ export default function MemberAppPage() {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => undefined);
     }
+  }, []);
+
+  useEffect(() => {
+    const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean };
+    const standalone = window.matchMedia('(display-mode: standalone)').matches || navigatorWithStandalone.standalone === true;
+    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    setIsStandalone(standalone);
+    setIsIOS(ios);
+    setShowInstallBanner(!standalone && window.localStorage.getItem('gymos-install-dismissed') !== 'true');
+
+    const handleInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+      setShowInstallBanner(true);
+    };
+    const handleInstalled = () => {
+      setInstallPrompt(null);
+      setIsStandalone(true);
+      setShowInstallBanner(false);
+      window.localStorage.removeItem('gymos-install-dismissed');
+    };
+
+    window.addEventListener('beforeinstallprompt', handleInstallPrompt);
+    window.addEventListener('appinstalled', handleInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleInstallPrompt);
+      window.removeEventListener('appinstalled', handleInstalled);
+    };
+  }, []);
+
+  const installMemberApp = useCallback(async () => {
+    if (isIOS) {
+      setShowIOSTutorial(true);
+      return;
+    }
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    setInstallPrompt(null);
+  }, [installPrompt, isIOS]);
+
+  const dismissInstallBanner = useCallback(() => {
+    window.localStorage.setItem('gymos-install-dismissed', 'true');
+    setShowInstallBanner(false);
   }, []);
 
   const profile = useQuery({
@@ -284,6 +337,18 @@ export default function MemberAppPage() {
           </button>
         </div>
       </header>
+
+      <PWAInstallBanner
+        isInstallable={Boolean(installPrompt)}
+        isStandalone={isStandalone}
+        isIOS={isIOS}
+        showBanner={showInstallBanner}
+        showIOSTutorial={showIOSTutorial}
+        brandColor={accent}
+        onInstallClick={() => void installMemberApp()}
+        onDismiss={dismissInstallBanner}
+        onCloseTutorial={() => setShowIOSTutorial(false)}
+      />
 
       {(pendingCheckIn || checkIn.isPending || checkInNotice) && (
         <div className="px-5 pt-4">
