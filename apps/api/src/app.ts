@@ -12,7 +12,7 @@ app.set('trust proxy', 1);
 
 app.use(helmet());
 app.use(cors({
-  origin: [env.WEB_URL, /\.mygymapp\.in$/],
+  origin: [env.WEB_URL, 'http://localhost:3000', /\.mygymapp\.in$/, /\.vercel\.app$/],
   credentials: true,
 }));
 app.use(express.json({ limit: '10mb' }));

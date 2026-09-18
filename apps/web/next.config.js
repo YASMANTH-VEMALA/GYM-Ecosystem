@@ -10,7 +10,14 @@ const nextConfig = {
     ],
   },
   async rewrites() {
-    const apiBaseUrl = (process.env.API_URL || 'http://localhost:4000').replace(/\/api$/, '');
+    const configuredApiUrl = (process.env.API_URL || '').replace(/\/api$/, '');
+    const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL);
+
+    let apiBaseUrl = configuredApiUrl;
+    if (!apiBaseUrl || (isProduction && (apiBaseUrl.includes('localhost') || apiBaseUrl.includes('127.0.0.1')))) {
+      apiBaseUrl = isProduction ? 'https://gym-ecosystem-api.vercel.app' : 'http://localhost:4000';
+    }
+
     return [
       {
         source: '/api/:path*',

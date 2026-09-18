@@ -13,6 +13,7 @@ import {
   Building2,
   QrCode,
   ShieldOff,
+  ChevronRight,
 } from 'lucide-react';
 import type { PortalSection } from '@gymstack/shared';
 
@@ -71,24 +72,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex h-screen bg-page">
-      {/* Sidebar — warm off-white to match the page */}
+      {/* Sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 w-64 border-r border-border-default bg-page transform transition-transform duration-200 lg:relative lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 flex w-sidebar flex-col border-r border-[var(--sidebar-border)] bg-[var(--sidebar-surface)] text-[var(--sidebar-text)] shadow-[var(--sidebar-shadow)] transform transition-all duration-200 lg:relative lg:translate-x-0',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
-        <div className="flex items-center gap-3 h-16 px-6 border-b border-border-default">
-          <div className="h-8 w-8 overflow-hidden rounded flex items-center justify-center text-white font-medium text-sm" style={{ backgroundColor: config.primaryColor }}>
+        <div className="flex h-sidebar-logo shrink-0 items-center gap-3 border-b border-[var(--sidebar-border)] px-4">
+          <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-[10px] text-sm font-medium text-white shadow-[0_6px_18px_rgba(0,0,0,0.22)]" style={{ backgroundColor: config.primaryColor }}>
             {config.logoUrl || config.companyLogoUrl ? <img src={config.logoUrl ?? config.companyLogoUrl!} alt="" className="h-full w-full bg-white object-contain" /> : config.logoInitials || config.gymName[0] || 'G'}
           </div>
-          <span className="font-medium text-lg truncate text-text-primary">{config.gymName || 'GymOS'}</span>
-          <button onClick={() => setSidebarOpen(false)} className="lg:hidden ml-auto text-text-muted hover:text-text-primary transition-colors duration-150">
+          <span className="truncate text-[15px] font-medium tracking-[-0.01em] text-[var(--sidebar-text)]">{config.gymName || 'GymOS'}</span>
+          <button onClick={() => setSidebarOpen(false)} className="ml-auto text-[var(--sidebar-muted)] transition-colors duration-150 hover:text-[var(--sidebar-text)] lg:hidden">
             <X size={20} />
           </button>
         </div>
 
-        <nav className="p-4 space-y-1">
+        <nav className="sidebar-scroll flex-1 space-y-1 overflow-y-auto px-2 py-3">
           {filteredNav.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
@@ -97,15 +98,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 key={item.href}
                 href={item.href}
                 onClick={() => setSidebarOpen(false)}
+                aria-current={isActive ? 'page' : undefined}
                 className={cn(
-                  'flex items-center gap-3 pl-3 pr-2 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ease-out relative',
+                  'group relative flex h-sidebar-item items-center gap-3 overflow-hidden rounded-[10px] px-2.5 text-sm transition-all duration-200 ease-out active:scale-[0.98]',
                   isActive
-                    ? 'bg-primary/10 text-primary border-l-[3px] border-primary'
-                    : 'text-text-secondary hover:bg-white hover:text-text-primary'
+                    ? 'bg-[var(--sidebar-active-bg)] font-medium text-[var(--sidebar-text)] shadow-[var(--sidebar-active-shadow)]'
+                    : 'text-[var(--sidebar-muted)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text)]'
                 )}
               >
-                <Icon size={18} className={isActive ? 'text-primary' : ''} />
-                {item.label}
+                {isActive && <span className="absolute inset-y-2 left-0 w-[3px] rounded-r-full" style={{ backgroundColor: config.primaryColor }} />}
+                <span
+                  className={cn(
+                    'grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-all duration-200',
+                    isActive ? 'text-white shadow-[0_5px_14px_rgba(0,0,0,0.16)]' : 'bg-[var(--sidebar-icon-bg)] text-[var(--sidebar-muted)] group-hover:text-[var(--sidebar-text)]'
+                  )}
+                  style={isActive ? { backgroundColor: config.primaryColor } : undefined}
+                >
+                  <Icon size={17} strokeWidth={1.8} />
+                </span>
+                <span className="flex-1 truncate">{item.label}</span>
+                <ChevronRight size={14} className={cn('text-[var(--sidebar-muted)] transition-all duration-200', isActive ? 'translate-x-0 opacity-70' : '-translate-x-1 opacity-0 group-hover:translate-x-0 group-hover:opacity-50')} />
               </Link>
             );
           })}
@@ -113,32 +125,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {(user.role !== 'manager' || (user.portalSections ?? []).includes('checkins')) && <Link
             href="/kiosk"
             target="_blank"
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-text-secondary hover:bg-white hover:text-text-primary transition-colors duration-150"
+            className="group flex h-sidebar-item items-center gap-3 rounded-[10px] px-2.5 text-sm text-[var(--sidebar-muted)] transition-all duration-200 hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text)] active:scale-[0.98]"
           >
-            <Monitor size={18} />
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--sidebar-icon-bg)] text-[var(--sidebar-muted)] transition-colors group-hover:text-[var(--sidebar-text)]"><Monitor size={17} strokeWidth={1.8} /></span>
             Open Kiosk
           </Link>}
           {(user.role !== 'manager' || (user.portalSections ?? []).includes('members')) && <Link
             href="/member-app"
             target="_blank"
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-text-secondary hover:bg-white hover:text-text-primary transition-colors duration-150"
+            className="group flex h-sidebar-item items-center gap-3 rounded-[10px] px-2.5 text-sm text-[var(--sidebar-muted)] transition-all duration-200 hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text)] active:scale-[0.98]"
           >
-            <Smartphone size={18} />
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--sidebar-icon-bg)] text-[var(--sidebar-muted)] transition-colors group-hover:text-[var(--sidebar-text)]"><Smartphone size={17} strokeWidth={1.8} /></span>
             Member App
           </Link>}
         </nav>
 
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-border-default bg-page">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-full bg-white border border-border-default flex items-center justify-center text-text-primary font-medium text-sm">
+        <div className="shrink-0 border-t border-[var(--sidebar-border)] p-3">
+          <div className="flex items-center gap-3 rounded-xl border border-[var(--sidebar-border)] bg-[var(--sidebar-panel-bg)] p-2 transition-colors hover:bg-[var(--sidebar-hover)]">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-sm font-medium text-white" style={{ backgroundColor: config.primaryColor }}>
               {user?.name?.[0]?.toUpperCase() || 'U'}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate text-text-primary">{user?.name}</p>
-              <p className="text-xs text-text-muted capitalize">{user?.role?.replace('_', ' ')}</p>
+              <p className="truncate text-[13px] font-medium text-[var(--sidebar-text)]">{user?.name}</p>
+              <p className="mt-0.5 truncate text-[11px] capitalize text-[var(--sidebar-subtle)]">{user?.role?.replace('_', ' ')}</p>
             </div>
-            <button onClick={logout} className="text-text-muted hover:text-danger transition-colors duration-150" title="Logout">
-              <LogOut size={18} />
+            <button onClick={logout} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--sidebar-subtle)] transition-all duration-150 hover:bg-danger/15 hover:text-danger active:scale-95" title="Logout" aria-label="Logout">
+              <LogOut size={16} />
             </button>
           </div>
         </div>
