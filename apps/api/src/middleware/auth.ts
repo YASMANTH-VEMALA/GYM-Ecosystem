@@ -1,8 +1,36 @@
 import { Request, Response, NextFunction } from 'express';
+import { createHash } from 'node:crypto';
 import prisma from '@gymstack/db';
 import type { AuthTokenPayload } from '@gymstack/shared';
 import { isPortalSection, type PortalSection } from '@gymstack/shared';
 import { supabaseAdmin } from '../config/supabase';
+
+const AUTH_CACHE_TTL_MS = 60 * 1000;
+const AUTH_CACHE_MAX_ENTRIES = 1000;
+const authenticatedUsers = new Map<string, { expiresAt: number; payload: AuthTokenPayload }>();
+
+function tokenCacheKey(token: string) {
+  return createHash('sha256').update(token).digest('base64url');
+}
+
+function getCachedUser(token: string) {
+  const key = tokenCacheKey(token);
+  const cached = authenticatedUsers.get(key);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    authenticatedUsers.delete(key);
+    return null;
+  }
+  return cached.payload;
+}
+
+function cacheUser(token: string, payload: AuthTokenPayload) {
+  if (authenticatedUsers.size >= AUTH_CACHE_MAX_ENTRIES) {
+    const oldestKey = authenticatedUsers.keys().next().value as string | undefined;
+    if (oldestKey) authenticatedUsers.delete(oldestKey);
+  }
+  authenticatedUsers.set(tokenCacheKey(token), { expiresAt: Date.now() + AUTH_CACHE_TTL_MS, payload });
+}
 
 declare global {
   namespace Express {
@@ -21,25 +49,36 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
   }
 
   const token = header.split(' ')[1];
+  const cachedUser = getCachedUser(token);
+  if (cachedUser) {
+    req.user = cachedUser;
+    next();
+    return;
+  }
+
   try {
-    const { data, error } = await supabaseAdmin.auth.getUser(token);
-    if (error || !data.user) {
+    // Verify asymmetric Supabase JWTs locally after the signing keys are
+    // cached. getUser made a remote Auth request for every API request.
+    const { data, error } = await supabaseAdmin.auth.getClaims(token);
+    const authId = data?.claims.sub;
+    if (error || !authId) {
       res.status(401).json({ error: 'Invalid or expired session' });
       return;
     }
 
-    let appUser = await prisma.user.findUnique({ where: { authId: data.user.id } });
+    let appUser = await prisma.user.findUnique({ where: { authId } });
 
     // Safely link a pre-provisioned owner/staff record on first login.
-    if (!appUser && data.user.email) {
+    const email = typeof data.claims.email === 'string' ? data.claims.email : null;
+    if (!appUser && email) {
       const matches = await prisma.user.findMany({
-        where: { email: data.user.email, authId: null },
+        where: { email, authId: null },
         take: 2,
       });
       if (matches.length === 1) {
         appUser = await prisma.user.update({
           where: { id: matches[0].id },
-          data: { authId: data.user.id, lastLoginAt: new Date() },
+          data: { authId, lastLoginAt: new Date() },
         });
       }
     }
@@ -53,13 +92,15 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
       await prisma.user.update({ where: { id: appUser.id }, data: { lastLoginAt: new Date() } });
     }
 
-    req.user = {
+    const payload: AuthTokenPayload = {
       userId: appUser.id,
       organizationId: appUser.organizationId,
       gymId: appUser.gymId,
       role: appUser.role as AuthTokenPayload['role'],
       portalSections: appUser.portalSections.filter(isPortalSection),
     };
+    cacheUser(token, payload);
+    req.user = payload;
     next();
   } catch (error) {
     next(error);
