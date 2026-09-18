@@ -28,7 +28,17 @@ export default function SettingsPage() {
     enabled: section === 'checkin',
     queryFn: async () => {
       const { data } = await apiClient.get<{ qrData: string }>('/gym/qr');
-      return QRCode.toDataURL(data.qrData, { width: 440, margin: 2, errorCorrectionLevel: 'M' });
+      let qrUrl = data.qrData;
+      // Ensure QR encodes the live domain, not localhost
+      try {
+        const parsed = new URL(qrUrl);
+        if (!window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1')) {
+          if (parsed.hostname.includes('localhost') || parsed.hostname.includes('127.0.0.1')) {
+            qrUrl = `${window.location.origin}${parsed.pathname}${parsed.search}`;
+          }
+        }
+      } catch { /* ignore */ }
+      return QRCode.toDataURL(qrUrl, { width: 440, margin: 2, errorCorrectionLevel: 'M' });
     },
   });
   const organization = useQuery({

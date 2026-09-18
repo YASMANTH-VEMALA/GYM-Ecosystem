@@ -11,6 +11,22 @@ import { useToast } from '@/components/ui/toast';
 
 type QrResponse = { attendanceQrData: string; admissionQrData: string };
 
+function normalizeQrUrl(rawUrl: string): string {
+  if (typeof window === 'undefined' || !rawUrl) return rawUrl;
+  try {
+    const parsed = new URL(rawUrl);
+    // If not running on localhost, ensure the QR code encodes the live domain
+    if (!window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1')) {
+      if (parsed.hostname.includes('localhost') || parsed.hostname.includes('127.0.0.1')) {
+        return `${window.location.origin}${parsed.pathname}${parsed.search}`;
+      }
+    }
+    return rawUrl;
+  } catch {
+    return rawUrl;
+  }
+}
+
 export default function BranchQrCodesPage() {
   const { user } = useAuth();
   const { config } = useGymConfig();
@@ -20,11 +36,13 @@ export default function BranchQrCodesPage() {
     queryKey: ['gym', 'branch-qr-codes'],
     queryFn: async () => {
       const { data } = await apiClient.get<QrResponse>('/gym/qr');
+      const attendanceQrData = normalizeQrUrl(data.attendanceQrData);
+      const admissionQrData = normalizeQrUrl(data.admissionQrData);
       const [attendanceImage, admissionImage] = await Promise.all([
-        QRCode.toDataURL(data.attendanceQrData, { width: 560, margin: 2, errorCorrectionLevel: 'M' }),
-        QRCode.toDataURL(data.admissionQrData, { width: 560, margin: 2, errorCorrectionLevel: 'M' }),
+        QRCode.toDataURL(attendanceQrData, { width: 560, margin: 2, errorCorrectionLevel: 'M' }),
+        QRCode.toDataURL(admissionQrData, { width: 560, margin: 2, errorCorrectionLevel: 'M' }),
       ]);
-      return { ...data, attendanceImage, admissionImage };
+      return { ...data, attendanceQrData, admissionQrData, attendanceImage, admissionImage };
     },
   });
 

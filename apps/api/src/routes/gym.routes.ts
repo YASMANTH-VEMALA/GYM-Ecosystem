@@ -81,8 +81,8 @@ router.get('/qr', requireRole('gym_owner', 'manager', 'receptionist'), requireMa
     if (!gym) { res.status(404).json({ error: 'Gym not found' }); return; }
     const attendanceToken = createBranchQrToken(gymId, gym.qrSecret, 'attendance');
     const admissionToken = createBranchQrToken(gymId, gym.qrSecret, 'admission');
-    const attendanceQrData = buildBranchQrUrl(gymId, attendanceToken, 'attendance');
-    const admissionQrData = buildBranchQrUrl(gymId, admissionToken, 'admission');
+    const attendanceQrData = buildBranchQrUrl(gymId, attendanceToken, 'attendance', req);
+    const admissionQrData = buildBranchQrUrl(gymId, admissionToken, 'admission', req);
 
     res.json({
       qrData: attendanceQrData,
@@ -108,13 +108,15 @@ router.post('/qr/regenerate', requireRole('gym_owner'), async (req: Request, res
     });
     const attendanceToken = createBranchQrToken(gymId, gym.qrSecret, 'attendance');
     const admissionToken = createBranchQrToken(gymId, gym.qrSecret, 'admission');
+    const attendanceQrData = buildBranchQrUrl(gymId, attendanceToken, 'attendance', req);
+    const admissionQrData = buildBranchQrUrl(gymId, admissionToken, 'admission', req);
     res.json({
       message: 'QR codes regenerated. Previous QR codes will no longer work.',
-      qrData: buildBranchQrUrl(gymId, attendanceToken, 'attendance'),
+      qrData: attendanceQrData,
       hash: attendanceToken,
       token: attendanceToken,
-      attendanceQrData: buildBranchQrUrl(gymId, attendanceToken, 'attendance'),
-      admissionQrData: buildBranchQrUrl(gymId, admissionToken, 'admission'),
+      attendanceQrData,
+      admissionQrData,
       gymId,
     });
   } catch (err) {
