@@ -57,19 +57,32 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
   }
 
   try {
-    // Verify asymmetric Supabase JWTs locally after the signing keys are
-    // cached. getUser made a remote Auth request for every API request.
-    const { data, error } = await supabaseAdmin.auth.getClaims(token);
-    const authId = data?.claims.sub;
-    if (error || !authId) {
-      res.status(401).json({ error: 'Invalid or expired session' });
-      return;
+    let authId: string | undefined;
+    let email: string | null = null;
+
+    try {
+      const { data, error } = await supabaseAdmin.auth.getClaims(token);
+      if (!error && data?.claims?.sub) {
+        authId = data.claims.sub as string;
+        email = typeof data.claims.email === 'string' ? data.claims.email : null;
+      }
+    } catch {
+      // Fallback to getUser
+    }
+
+    if (!authId) {
+      const { data, error } = await supabaseAdmin.auth.getUser(token);
+      if (error || !data.user) {
+        res.status(401).json({ error: 'Invalid or expired session' });
+        return;
+      }
+      authId = data.user.id;
+      email = data.user.email ?? null;
     }
 
     let appUser = await prisma.user.findUnique({ where: { authId } });
 
     // Safely link a pre-provisioned owner/staff record on first login.
-    const email = typeof data.claims.email === 'string' ? data.claims.email : null;
     if (!appUser && email) {
       const matches = await prisma.user.findMany({
         where: { email, authId: null },
