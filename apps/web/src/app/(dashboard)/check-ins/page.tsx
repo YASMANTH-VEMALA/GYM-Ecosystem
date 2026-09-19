@@ -6,7 +6,7 @@ import apiClient from '@/lib/api-client';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TableSkeleton } from '@/components/ui/skeleton';
-import { CalendarCheck, Download, Calendar, TrendingUp, Clock, LogIn } from 'lucide-react';
+import { CalendarCheck, Download, Calendar, LogIn } from 'lucide-react';
 
 interface CheckInRow {
   id: string;
@@ -106,7 +106,7 @@ export default function CheckInsPage() {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8 stagger-1">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-page-title text-text-primary">Check-ins</h1>
           <p className="text-body text-text-secondary mt-2">Track member attendance in real-time from kiosk & mobile app</p>
@@ -136,9 +136,15 @@ export default function CheckInsPage() {
         </div>
       </div>
 
-      {/* Summary Stats */}
-      {!isLoading && enriched.length > 0 && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8 stagger-2">
+      {/* Summary Stats — renders matching skeleton during loading to avoid any layout shift */}
+      {isLoading ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="card p-4 h-24 animate-pulse bg-neutral-100 dark:bg-neutral-800/40" />
+          ))}
+        </div>
+      ) : enriched.length > 0 ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <div className="card p-4">
             <p className="text-caption text-text-secondary font-medium mb-2">Total Check-ins</p>
             <p className="text-heading text-text-primary">{stats.total}</p>
@@ -156,9 +162,9 @@ export default function CheckInsPage() {
             <p className="text-body text-text-primary font-mono">{formatDuration(stats.avgDuration)}</p>
           </div>
         </div>
-      )}
+      ) : null}
 
-      <div className="stagger-3">
+      <div>
         {isLoading ? (
           <TableSkeleton rows={8} cols={5} />
         ) : !enriched.length ? (

@@ -66,7 +66,24 @@ export default function BranchesPage() {
       </div>
 
       {overview.isLoading ? (
-        <div className="grid grid-cols-1 gap-between-cards sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }).map((_, index) => <StatCardSkeleton key={index} />)}</div>
+        <div className="space-y-8">
+          <div className="grid grid-cols-1 gap-between-cards sm:grid-cols-2 xl:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <StatCardSkeleton key={index} />
+            ))}
+          </div>
+          <section>
+            <div className="mb-4">
+              <div className="h-6 w-44 rounded bg-neutral-200 dark:bg-neutral-800 animate-pulse" />
+              <div className="h-4 w-72 rounded bg-neutral-200 dark:bg-neutral-800 animate-pulse mt-1" />
+            </div>
+            <div className="grid grid-cols-1 gap-between-cards lg:grid-cols-2 2xl:grid-cols-3">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <div key={index} className="card h-64 animate-pulse bg-neutral-100 dark:bg-neutral-800/40" />
+              ))}
+            </div>
+          </section>
+        </div>
       ) : overview.isError || !overview.data ? (
         <div className="card empty-state"><p className="empty-state-title">Could not load your branches</p><button className="btn btn-primary" onClick={() => overview.refetch()}>Retry</button></div>
       ) : (

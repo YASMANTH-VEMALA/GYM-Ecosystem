@@ -11,6 +11,17 @@ const app = express();
 app.set('trust proxy', 1);
 
 app.use(helmet());
+app.use((req, res, next) => {
+  const start = Date.now();
+  const originalWriteHead = res.writeHead;
+  res.writeHead = function (this: typeof res, ...args: any[]) {
+    const duration = Date.now() - start;
+    res.setHeader('Server-Timing', `total;dur=${duration}`);
+    res.setHeader('X-Response-Time', `${duration}ms`);
+    return originalWriteHead.apply(this, args as any);
+  };
+  next();
+});
 app.use(cors({
   origin: [env.WEB_URL, 'http://localhost:3000', /\.mygymapp\.in$/, /\.vercel\.app$/],
   credentials: true,

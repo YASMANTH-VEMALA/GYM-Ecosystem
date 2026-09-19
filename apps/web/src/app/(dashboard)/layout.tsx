@@ -88,7 +88,36 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   if (isLoading || !user || user.role === 'member' || !canViewSection) {
-    return <div className="min-h-screen bg-page p-8"><div className="h-16 rounded-card bg-gray-100 animate-pulse mb-6" /><div className="grid grid-cols-1 md:grid-cols-3 gap-4"><div className="h-32 rounded-card bg-gray-100 animate-pulse" /><div className="h-32 rounded-card bg-gray-100 animate-pulse" /><div className="h-32 rounded-card bg-gray-100 animate-pulse" /></div></div>;
+    return (
+      <div className="flex h-screen bg-page">
+        <aside className="hidden lg:flex w-sidebar shrink-0 flex-col border-r border-[var(--sidebar-border)] bg-[var(--sidebar-surface)]">
+          <div className="flex h-sidebar-logo shrink-0 items-center gap-3 border-b border-[var(--sidebar-border)] px-4">
+            <div className="h-9 w-9 rounded-[10px] bg-neutral-200 dark:bg-neutral-800 animate-pulse" />
+            <div className="h-4 w-24 rounded bg-neutral-200 dark:bg-neutral-800 animate-pulse" />
+          </div>
+          <div className="flex-1 space-y-2 p-3">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="h-9 rounded-xl bg-neutral-100 dark:bg-neutral-800/60 animate-pulse" />
+            ))}
+          </div>
+        </aside>
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-card px-6">
+            <div className="h-5 w-32 rounded bg-neutral-200 dark:bg-neutral-800 animate-pulse" />
+            <div className="h-8 w-24 rounded-full bg-neutral-200 dark:bg-neutral-800 animate-pulse" />
+          </header>
+          <main className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6">
+            <div className="h-8 w-48 rounded bg-neutral-200 dark:bg-neutral-800 animate-pulse" />
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="h-28 rounded-card bg-card border border-border p-4 animate-pulse" />
+              ))}
+            </div>
+            <div className="h-64 rounded-card bg-card border border-border animate-pulse" />
+          </main>
+        </div>
+      </div>
+    );
   }
 
   const filteredNav = navItems.filter(canAccessItem);
