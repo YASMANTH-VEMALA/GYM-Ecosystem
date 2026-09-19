@@ -1,10 +1,17 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import multer from 'multer';
 import { authenticate, requireManagerSection, requireRole } from '../middleware/auth';
 import { gymContext } from '../middleware/gym-context';
 import * as notificationService from '../services/notification.service';
+import { uploadAttachment } from '../services/attachment-upload.service';
 import prisma from '@gymstack/db';
 import { z } from 'zod';
 import { validate } from '../middleware/validate';
+
+const attachmentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+});
 
 const notificationSchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -14,6 +21,10 @@ const notificationSchema = z.object({
   targetId: z.string().uuid().optional(),
   targetIds: z.array(z.string().uuid()).min(1).max(500).optional(),
   scheduledAt: z.string().datetime({ offset: true }).optional(),
+  theme: z.string().max(50).optional(),
+  attachmentUrl: z.string().url().max(1000).optional(),
+  attachmentName: z.string().max(200).optional(),
+  attachmentType: z.string().max(100).optional(),
 }).superRefine((value, context) => {
   if ((value.target === 'plan' || value.target === 'individual') && !value.targetId) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['targetId'], message: 'targetId is required for this target' });
@@ -80,6 +91,33 @@ router.get('/scheduled', requireRole('gym_owner', 'manager', 'receptionist'), re
     res.status(500).json({ error: (err as Error).message });
   }
 });
+
+router.post(
+  '/attachment',
+  requireRole('gym_owner', 'manager', 'receptionist'),
+  requireManagerSection('notifications'),
+  (req: Request, res: Response, next: NextFunction) => {
+    attachmentUpload.single('file')(req, res, (error) => {
+      if (!error) { next(); return; }
+      const isSizeError = error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE';
+      res.status(isSizeError ? 413 : 400).json({
+        error: isSizeError ? 'Attachment must be 10 MB or smaller' : 'Could not process the uploaded file',
+      });
+    });
+  },
+  async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        res.status(400).json({ error: 'Please select a file to upload' });
+        return;
+      }
+      const result = await uploadAttachment(req.gymId!, req.file);
+      res.status(201).json(result);
+    } catch (err) {
+      res.status(400).json({ error: (err as Error).message });
+    }
+  }
+);
 
 router.post('/', requireRole('gym_owner', 'manager', 'receptionist'), requireManagerSection('notifications'), validate(notificationSchema), async (req: Request, res: Response) => {
   try {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
+import { X, QrCode as QrIcon } from 'lucide-react';
 import QRCode from 'qrcode';
 
 interface QRModalProps {
@@ -18,8 +18,8 @@ export function QRModal({ isOpen, onClose, memberCode }: QRModalProps) {
     let active = true;
     QRCode.toDataURL(memberCode, {
       width: 320,
-      margin: 2,
-      color: { dark: '#0F0F0F', light: '#FFFFFF' },
+      margin: 1,
+      color: { dark: '#060517', light: '#FFFFFF' },
       errorCorrectionLevel: 'M',
     }).then((url) => {
       if (active) setQrDataUrl(url);
@@ -41,32 +41,59 @@ export function QRModal({ isOpen, onClose, memberCode }: QRModalProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6 backdrop-blur-md" onClick={onClose} role="presentation">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-5 backdrop-blur-sm animate-fade-in"
+      onClick={onClose}
+      role="presentation"
+    >
       <div
-        className="relative w-full max-w-sm rounded-3xl border border-white/[0.1] bg-[#1A1A1A] p-6 animate-scale-in"
+        className="relative w-full max-w-xs rounded-3xl bg-white p-6 shadow-2xl border border-[#e6e6e7] text-[#060517]"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="member-qr-title"
       >
-        <button onClick={onClose} className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-xl text-[#888] active:scale-95" aria-label="Close QR code">
-          <X size={20} />
+        <button
+          onClick={onClose}
+          className="absolute right-4 top-4 grid h-8 w-8 place-items-center rounded-full bg-[#f5f5f7] text-[#9c9ca3] hover:text-[#060517] btn-tap"
+          aria-label="Close QR code"
+        >
+          <X size={18} />
         </button>
-        <div className="mb-4 text-center">
-          <h2 id="member-qr-title" className="text-lg font-semibold text-[#F5F5F0]">Membership QR</h2>
-          <p className="mt-1 text-xs text-[#888]">Show this code at reception</p>
+
+        <div className="text-center pt-1 mb-4">
+          <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-[#ffcb1c]/20 text-[#060517]">
+            <QrIcon size={20} />
+          </div>
+          <h2 id="member-qr-title" className="text-base font-bold text-[#060517]">
+            Membership QR
+          </h2>
+          <p className="mt-0.5 text-xs text-[#9c9ca3]">
+            Show this code at reception
+          </p>
         </div>
-        <div className="mx-auto mb-4 grid h-52 w-52 place-items-center rounded-2xl bg-white p-3">
+
+        <div className="mx-auto mb-4 grid h-48 w-48 place-items-center rounded-2xl bg-[#f9f9fc] border border-[#e6e6e7] p-3">
           {qrDataUrl ? (
-            // The QR is generated locally from the member code and is intentionally a data URL.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={qrDataUrl} alt={`QR code for member ${memberCode}`} className="h-full w-full" />
+            <img
+              src={qrDataUrl}
+              alt={`QR code for member ${memberCode}`}
+              className="h-full w-full object-contain rounded-lg"
+            />
           ) : (
-            <div className="h-full w-full rounded-xl bg-black/5 animate-pulse" />
+            <div className="h-full w-full rounded-xl bg-gray-200 animate-pulse" />
           )}
         </div>
-        <p className="text-center font-mono text-sm tracking-wider text-[#888]">{memberCode}</p>
-        <button onClick={onClose} className="mt-4 h-12 w-full rounded-xl border border-white/[0.1] bg-white/[0.06] text-sm font-medium text-[#F5F5F0] active:scale-[0.98]">
+
+        <div className="rounded-xl bg-[#f5f5f7] py-2 px-3 text-center mb-4">
+          <p className="text-[10px] text-[#9c9ca3] uppercase tracking-wider font-medium">Member Code</p>
+          <p className="font-mono text-sm font-semibold tracking-widest text-[#060517]">{memberCode}</p>
+        </div>
+
+        <button
+          onClick={onClose}
+          className="h-11 w-full rounded-xl bg-[#060517] text-sm font-medium text-white shadow-sm btn-tap"
+        >
           Close
         </button>
       </div>

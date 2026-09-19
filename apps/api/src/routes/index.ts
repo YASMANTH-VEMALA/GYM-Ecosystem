@@ -16,6 +16,7 @@ import admissionRoutes from './admission.routes';
 import organizationRoutes from './organization.routes';
 import uploadRoutes from './upload.routes';
 import pushRoutes from './push.routes';
+import referralRoutes from './referral.routes';
 import prisma from '@gymstack/db';
 
 const router = Router();
@@ -37,6 +38,7 @@ router.use('/admissions', admissionRoutes);
 router.use('/organization', organizationRoutes);
 router.use('/uploads', uploadRoutes);
 router.use('/push', pushRoutes);
+router.use('/referrals', referralRoutes);
 
 // Health check
 router.get('/health', async (_req, res) => {

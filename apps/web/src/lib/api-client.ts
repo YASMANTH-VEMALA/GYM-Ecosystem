@@ -48,12 +48,23 @@ apiClient.interceptors.request.use(async (config) => {
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
-    if (error.response?.status === 401 && typeof window !== 'undefined') {
-      setApiSession(null);
-      clearPersistedQueryCache();
-      window.localStorage.removeItem('gymos-user-id');
-      await supabase.auth.signOut();
-      window.location.href = '/login';
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname;
+      const isAuthFlow = path.includes('/callback') || path.includes('complete-profile');
+
+      if (error.response?.status === 401 && !isAuthFlow) {
+        setApiSession(null);
+        clearPersistedQueryCache();
+        window.localStorage.removeItem('gymos-user-id');
+        await supabase.auth.signOut();
+        window.location.href = '/login';
+      } else if (error.response?.status === 403) {
+        const url = error.config?.url ?? '';
+        if (url.includes('/auth/me') && !isAuthFlow) {
+          // New Google/OAuth or registered user without a gym record yet — redirect to complete profile
+          window.location.href = '/auth/complete-profile';
+        }
+      }
     }
     return Promise.reject(error);
   }

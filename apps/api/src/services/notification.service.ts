@@ -2,6 +2,7 @@ import prisma from '@gymstack/db';
 import { Resend } from 'resend';
 import { env } from '../config/env';
 import { sendWebPushToUser } from './web-push.service';
+import { renderThemedEmail } from '../utils/email-themes';
 
 const resend = env.RESEND_API_KEY ? new Resend(env.RESEND_API_KEY) : null;
 
@@ -78,14 +79,45 @@ export async function getNotificationHistory(gymId: string, params: {
         member: { include: { user: { select: { name: true } } } },
       },
       orderBy: { createdAt: 'desc' },
-      skip,
-      take: limit,
+      // Fetch more than limit to account for deduplication when memberId is set
+      skip: memberId ? 0 : skip,
+      take: memberId ? limit * 4 : limit,
     }),
     prisma.notificationLog.count({ where }),
   ]);
 
+  // When viewing a specific member's notifications, deduplicate records that
+  // were created by a "both" channel send (which creates one email + one push
+  // record for the same message). Group by title+body+createdAt-minute.
+  if (memberId) {
+    const seen = new Map<string, typeof notifications[0]>();
+    for (const n of notifications) {
+      const minute = new Date(n.createdAt);
+      minute.setSeconds(0, 0);
+      const key = `${n.title}::${n.body}::${minute.getTime()}`;
+      const existing = seen.get(key);
+      if (!existing) {
+        seen.set(key, n);
+      } else {
+        // Merge: if we have both email and push, mark channel as 'both'
+        const channels = new Set([existing.channel, n.channel]);
+        if (channels.has('email') && channels.has('push')) {
+          existing.channel = 'both' as typeof existing.channel;
+        }
+        // Prefer the delivered record's sentAt
+        if (n.status === 'delivered' && existing.status !== 'delivered') {
+          existing.status = n.status;
+          existing.sentAt = n.sentAt;
+        }
+      }
+    }
+    const deduplicated = Array.from(seen.values()).slice(skip, skip + limit);
+    return { notifications: deduplicated, total: Math.ceil(seen.size), page, limit };
+  }
+
   return { notifications, total, page, limit };
 }
+
 
 export async function sendNotification(gymId: string, data: {
   title: string;
@@ -95,11 +127,31 @@ export async function sendNotification(gymId: string, data: {
   targetId?: string;
   targetIds?: string[];
   scheduledAt?: string;
+  theme?: string;
+  attachmentUrl?: string;
+  attachmentName?: string;
+  attachmentType?: string;
 }) {
-  const { title, body, channel, target, targetId, targetIds, scheduledAt } = data;
+  const {
+    title,
+    body,
+    channel,
+    target,
+    targetId,
+    targetIds,
+    scheduledAt,
+    theme,
+    attachmentUrl,
+    attachmentName,
+    attachmentType,
+  } = data;
 
   const status = scheduledAt ? 'scheduled' : 'pending';
-  const metadata = scheduledAt ? { scheduledAt } : undefined;
+  const metadata = {
+    ...(scheduledAt ? { scheduledAt } : {}),
+    ...(theme ? { theme } : {}),
+    ...(attachmentUrl ? { attachmentUrl, attachmentName, attachmentType } : {}),
+  };
 
   let memberIds: string[] = [];
 
@@ -177,6 +229,31 @@ export async function sendNotification(gymId: string, data: {
 
   memberIds = Array.from(new Set(memberIds));
 
+  // Load gym details for themed email branding
+  const gym = await prisma.gym.findUnique({
+    where: { id: gymId },
+    select: { name: true, logoUrl: true, organization: { select: { name: true, logoUrl: true } } },
+  });
+  const gymName = gym?.name || gym?.organization?.name || 'Gym';
+  const gymLogoUrl = gym?.logoUrl || gym?.organization?.logoUrl || undefined;
+
+  // Prepare Resend email attachments once if an attachment is provided
+  let resendAttachments: Array<{ filename: string; content: Buffer }> | undefined;
+  if (attachmentUrl && resend) {
+    try {
+      const response = await fetch(attachmentUrl);
+      if (response.ok) {
+        const arrayBuffer = await response.arrayBuffer();
+        resendAttachments = [{
+          filename: attachmentName || (attachmentType?.startsWith('image/') ? 'image.jpg' : 'document.pdf'),
+          content: Buffer.from(arrayBuffer),
+        }];
+      }
+    } catch (err) {
+      console.warn('Could not fetch attachment buffer for email delivery:', err);
+    }
+  }
+
   const members = await prisma.member.findMany({
     where: { gymId, id: { in: memberIds } },
     include: {
@@ -204,6 +281,18 @@ export async function sendNotification(gymId: string, data: {
     const personalize = (value: string) => Object.entries(replacements).reduce((result, [tag, replacement]) => result.replaceAll(tag, replacement), value);
     const personalizedTitle = personalize(title);
     const personalizedBody = personalize(body);
+
+    const themedHtml = renderThemedEmail({
+      theme,
+      gymName,
+      gymLogoUrl,
+      title: personalizedTitle,
+      body: personalizedBody,
+      attachmentUrl,
+      attachmentName,
+      attachmentType,
+    });
+
     return Promise.all(deliveryChannels.map(async (deliveryChannel) => {
       let deliveryStatus = status;
       let providerId: string | undefined;
@@ -215,13 +304,24 @@ export async function sendNotification(gymId: string, data: {
           deliveryStatus = 'failed';
           failureReason = !resend ? 'Resend is not configured' : 'Member email is missing';
         } else {
-          const { data: delivery, error } = await resend.emails.send({ from: env.RESEND_FROM_EMAIL, to: member.user.email, subject: personalizedTitle, text: personalizedBody });
+          const { data: delivery, error } = await resend.emails.send({
+            from: env.RESEND_FROM_EMAIL,
+            to: member.user.email,
+            subject: personalizedTitle,
+            text: personalizedBody,
+            html: themedHtml,
+            attachments: resendAttachments,
+          });
           deliveryStatus = error ? 'failed' : 'delivered';
           providerId = delivery?.id;
           failureReason = error?.message;
         }
       } else if (!scheduledAt && deliveryChannel === 'push') {
-        const result = await sendWebPushToUser(member.user.id, { title: personalizedTitle, body: personalizedBody, tag: `manual-${gymId}` });
+        const result = await sendWebPushToUser(member.user.id, {
+          title: personalizedTitle,
+          body: personalizedBody,
+          tag: `manual-${gymId}`,
+        });
         deliveryStatus = result.delivered > 0 ? 'delivered' : 'failed';
         pushDevices = result.devices;
         failureReason = result.reason;
@@ -296,13 +396,64 @@ export async function sendDueScheduledNotifications() {
     try {
       if (notification.channel === 'push') {
         if (!notification.member) throw new Error('Member is missing');
-        const result = await sendWebPushToUser(notification.member.user.id, { title: notification.title ?? 'GymOS notification', body: notification.body ?? '', tag: `scheduled-${notification.id}` });
+        const result = await sendWebPushToUser(notification.member.user.id, {
+          title: notification.title ?? 'GymOS notification',
+          body: notification.body ?? '',
+          tag: `scheduled-${notification.id}`,
+        });
         if (result.delivered === 0) throw new Error(result.reason ?? 'Push delivery failed');
         status = 'delivered';
       } else {
         if (!resend) throw new Error('Resend is not configured');
         if (!recipient) throw new Error('Member email is missing');
-        const { data, error } = await resend.emails.send({ from: env.RESEND_FROM_EMAIL, to: recipient, subject: notification.title ?? 'GymOS notification', text: notification.body ?? '' });
+
+        const gym = await prisma.gym.findUnique({
+          where: { id: notification.gymId },
+          select: { name: true, logoUrl: true, organization: { select: { name: true, logoUrl: true } } },
+        });
+        const gymName = gym?.name || gym?.organization?.name || 'Gym';
+        const gymLogoUrl = gym?.logoUrl || gym?.organization?.logoUrl || undefined;
+
+        const attachmentUrl = typeof metadata.attachmentUrl === 'string' ? metadata.attachmentUrl : undefined;
+        const attachmentName = typeof metadata.attachmentName === 'string' ? metadata.attachmentName : undefined;
+        const attachmentType = typeof metadata.attachmentType === 'string' ? metadata.attachmentType : undefined;
+        const theme = typeof metadata.theme === 'string' ? metadata.theme : undefined;
+
+        let resendAttachments: Array<{ filename: string; content: Buffer }> | undefined;
+        if (attachmentUrl) {
+          try {
+            const resp = await fetch(attachmentUrl);
+            if (resp.ok) {
+              const arrayBuffer = await resp.arrayBuffer();
+              resendAttachments = [{
+                filename: attachmentName || (attachmentType?.startsWith('image/') ? 'image.jpg' : 'document.pdf'),
+                content: Buffer.from(arrayBuffer),
+              }];
+            }
+          } catch (fetchErr) {
+            console.warn('Could not fetch attachment for scheduled email delivery:', fetchErr);
+          }
+        }
+
+        const themedHtml = renderThemedEmail({
+          theme,
+          gymName,
+          gymLogoUrl,
+          title: notification.title ?? 'GymOS notification',
+          body: notification.body ?? '',
+          attachmentUrl,
+          attachmentName,
+          attachmentType,
+        });
+
+        const { data, error } = await resend.emails.send({
+          from: env.RESEND_FROM_EMAIL,
+          to: recipient,
+          subject: notification.title ?? 'GymOS notification',
+          text: notification.body ?? '',
+          html: themedHtml,
+          attachments: resendAttachments,
+        });
         if (error) throw new Error(error.message);
         status = 'delivered';
         providerId = data?.id;

@@ -7,43 +7,66 @@ import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
 import {
-  LayoutDashboard, Users, CreditCard, CalendarCheck, Dumbbell,
-  UtensilsCrossed, BarChart3, Bell, Settings, UserCog, Receipt,
-  Menu, X, LogOut, Monitor, IndianRupee, Smartphone,
+  Store,
+  LayoutGrid,
+  Users,
+  IndianRupee,
+  CalendarCheck2,
+  ScanQrCode,
+  CreditCard,
+  Layers,
+  Gift,
+  Dumbbell,
+  Apple,
+  TrendingUp,
+  UserCog,
+  Bell,
+  SlidersHorizontal,
+  Menu,
+  X,
+  LogOut,
+  Monitor,
+  Smartphone,
   Building2,
-  QrCode,
   ShieldOff,
   ChevronRight,
 } from 'lucide-react';
 import type { PortalSection } from '@gymstack/shared';
 
-const navItems: Array<{ href: string; label: string; icon: typeof LayoutDashboard; roles: string[]; section?: PortalSection }> = [
-  { href: '/branches', label: 'All Branches', icon: Building2, roles: ['gym_owner'] },
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['gym_owner', 'manager', 'receptionist', 'coach'], section: 'dashboard' },
+const navItems: Array<{ href: string; label: string; icon: typeof LayoutGrid; roles: string[]; section?: PortalSection }> = [
+  { href: '/branches', label: 'All Branches', icon: Store, roles: ['gym_owner'] },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutGrid, roles: ['gym_owner', 'manager', 'receptionist', 'coach'], section: 'dashboard' },
   { href: '/members', label: 'Members', icon: Users, roles: ['gym_owner', 'manager', 'receptionist', 'coach'], section: 'members' },
   { href: '/fees', label: 'Fees', icon: IndianRupee, roles: ['gym_owner', 'manager', 'receptionist'], section: 'fees' },
-  { href: '/check-ins', label: 'Check-ins', icon: CalendarCheck, roles: ['gym_owner', 'manager', 'receptionist'], section: 'checkins' },
-  { href: '/qr-codes', label: 'QR Codes', icon: QrCode, roles: ['gym_owner', 'manager', 'receptionist'], section: 'qr_codes' },
+  { href: '/check-ins', label: 'Check-ins', icon: CalendarCheck2, roles: ['gym_owner', 'manager', 'receptionist'], section: 'checkins' },
+  { href: '/qr-codes', label: 'QR Codes', icon: ScanQrCode, roles: ['gym_owner', 'manager', 'receptionist'], section: 'qr_codes' },
   { href: '/payments', label: 'Payments', icon: CreditCard, roles: ['gym_owner', 'manager', 'receptionist'], section: 'payments' },
-  { href: '/plans', label: 'Plans', icon: Receipt, roles: ['gym_owner', 'manager'], section: 'plans' },
+  { href: '/plans', label: 'Plans', icon: Layers, roles: ['gym_owner', 'manager'], section: 'plans' },
+  { href: '/referrals', label: 'Referrals', icon: Gift, roles: ['gym_owner', 'manager'] },
   { href: '/workouts', label: 'Workouts', icon: Dumbbell, roles: ['gym_owner', 'manager', 'coach'], section: 'workouts' },
-  { href: '/diets', label: 'Diets', icon: UtensilsCrossed, roles: ['gym_owner', 'manager', 'coach'], section: 'diets' },
-  { href: '/analytics', label: 'Analytics', icon: BarChart3, roles: ['gym_owner', 'manager'], section: 'analytics' },
+  { href: '/diets', label: 'Diets', icon: Apple, roles: ['gym_owner', 'manager', 'coach'], section: 'diets' },
+  { href: '/analytics', label: 'Analytics', icon: TrendingUp, roles: ['gym_owner', 'manager'], section: 'analytics' },
   { href: '/staff', label: 'Staff', icon: UserCog, roles: ['gym_owner'] },
   { href: '/notifications', label: 'Notifications', icon: Bell, roles: ['gym_owner', 'manager', 'receptionist'], section: 'notifications' },
-  { href: '/settings', label: 'Settings', icon: Settings, roles: ['gym_owner'] },
+  { href: '/settings', label: 'Settings', icon: SlidersHorizontal, roles: ['gym_owner'] },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { user, logout, isLoading, branches, selectedBranchId, switchBranch } = useAuth();
+  const { user, session, logout, isLoading, branches, selectedBranchId, switchBranch } = useAuth();
   const { config } = useGymConfig();
   const pathname = usePathname();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
-    if (!isLoading && !user) router.replace('/login');
-  }, [isLoading, router, user]);
+    if (!isLoading && !user) {
+      if (session) {
+        router.replace('/auth/complete-profile');
+      } else {
+        router.replace('/login');
+      }
+    }
+  }, [isLoading, router, user, session]);
 
   useEffect(() => {
     if (!isLoading && user?.role === 'member') router.replace('/member-app');
@@ -100,44 +123,75 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 onClick={() => setSidebarOpen(false)}
                 aria-current={isActive ? 'page' : undefined}
                 className={cn(
-                  'group relative flex h-sidebar-item items-center gap-3 overflow-hidden rounded-[10px] px-2.5 text-sm transition-all duration-200 ease-out active:scale-[0.98]',
+                  'group relative flex h-sidebar-item items-center gap-3 overflow-hidden rounded-[10px] px-3 text-sm transition-all duration-150 ease-out active:scale-[0.98]',
                   isActive
                     ? 'bg-[var(--sidebar-active-bg)] font-medium text-[var(--sidebar-text)] shadow-[var(--sidebar-active-shadow)]'
                     : 'text-[var(--sidebar-muted)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text)]'
                 )}
               >
-                {isActive && <span className="absolute inset-y-2 left-0 w-[3px] rounded-r-full" style={{ backgroundColor: config.primaryColor }} />}
-                <span
-                  className={cn(
-                    'grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-all duration-200',
-                    isActive ? 'text-white shadow-[0_5px_14px_rgba(0,0,0,0.16)]' : 'bg-[var(--sidebar-icon-bg)] text-[var(--sidebar-muted)] group-hover:text-[var(--sidebar-text)]'
-                  )}
-                  style={isActive ? { backgroundColor: config.primaryColor } : undefined}
-                >
-                  <Icon size={17} strokeWidth={1.8} />
+                {isActive && (
+                  <span
+                    className="absolute inset-y-2 left-0 w-[3px] rounded-r-full"
+                    style={{ backgroundColor: config.primaryColor }}
+                  />
+                )}
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                  <Icon
+                    size={18}
+                    strokeWidth={1.8}
+                    className={cn(
+                      'transition-colors duration-150',
+                      isActive ? '' : 'text-[var(--sidebar-muted)] group-hover:text-[var(--sidebar-text)]'
+                    )}
+                    style={isActive ? { color: config.primaryColor } : undefined}
+                  />
                 </span>
                 <span className="flex-1 truncate">{item.label}</span>
-                <ChevronRight size={14} className={cn('text-[var(--sidebar-muted)] transition-all duration-200', isActive ? 'translate-x-0 opacity-70' : '-translate-x-1 opacity-0 group-hover:translate-x-0 group-hover:opacity-50')} />
+                <ChevronRight
+                  size={14}
+                  className={cn(
+                    'text-[var(--sidebar-muted)] transition-all duration-200',
+                    isActive
+                      ? 'translate-x-0 opacity-70'
+                      : '-translate-x-1 opacity-0 group-hover:translate-x-0 group-hover:opacity-50'
+                  )}
+                />
               </Link>
             );
           })}
 
-          {(user.role !== 'manager' || (user.portalSections ?? []).includes('checkins')) && <Link
-            href="/kiosk"
-            target="_blank"
-            className="group flex h-sidebar-item items-center gap-3 rounded-[10px] px-2.5 text-sm text-[var(--sidebar-muted)] transition-all duration-200 hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text)] active:scale-[0.98]"
-          >
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--sidebar-icon-bg)] text-[var(--sidebar-muted)] transition-colors group-hover:text-[var(--sidebar-text)]"><Monitor size={17} strokeWidth={1.8} /></span>
-            Open Kiosk
-          </Link>}
-          {(user.role !== 'manager' || (user.portalSections ?? []).includes('members')) && <Link
-            href="/member-app"
-            target="_blank"
-            className="group flex h-sidebar-item items-center gap-3 rounded-[10px] px-2.5 text-sm text-[var(--sidebar-muted)] transition-all duration-200 hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text)] active:scale-[0.98]"
-          >
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--sidebar-icon-bg)] text-[var(--sidebar-muted)] transition-colors group-hover:text-[var(--sidebar-text)]"><Smartphone size={17} strokeWidth={1.8} /></span>
-            Member App
-          </Link>}
+          {(user.role !== 'manager' || (user.portalSections ?? []).includes('checkins')) && (
+            <Link
+              href="/kiosk"
+              target="_blank"
+              className="group flex h-sidebar-item items-center gap-3 rounded-[10px] px-3 text-sm text-[var(--sidebar-muted)] transition-all duration-150 hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text)] active:scale-[0.98]"
+            >
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                <Monitor
+                  size={18}
+                  strokeWidth={1.8}
+                  className="text-[var(--sidebar-muted)] group-hover:text-[var(--sidebar-text)] transition-colors duration-150"
+                />
+              </span>
+              Open Kiosk
+            </Link>
+          )}
+          {(user.role !== 'manager' || (user.portalSections ?? []).includes('members')) && (
+            <Link
+              href="/member-app"
+              target="_blank"
+              className="group flex h-sidebar-item items-center gap-3 rounded-[10px] px-3 text-sm text-[var(--sidebar-muted)] transition-all duration-150 hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text)] active:scale-[0.98]"
+            >
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                <Smartphone
+                  size={18}
+                  strokeWidth={1.8}
+                  className="text-[var(--sidebar-muted)] group-hover:text-[var(--sidebar-text)] transition-colors duration-150"
+                />
+              </span>
+              Member App
+            </Link>
+          )}
         </nav>
 
         <div className="shrink-0 border-t border-[var(--sidebar-border)] p-3">

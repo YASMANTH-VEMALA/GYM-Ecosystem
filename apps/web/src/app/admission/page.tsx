@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { isAxiosError } from 'axios';
-import { Building2, CheckCircle2, Dumbbell, Loader2, ShieldCheck } from 'lucide-react';
+import { Building2, CheckCircle2, Dumbbell, Loader2, ShieldCheck, Gift } from 'lucide-react';
 import apiClient from '@/lib/api-client';
 
 type Branch = {
@@ -29,6 +29,12 @@ export default function AdmissionPage() {
   const [branch, setBranch] = useState<Branch | null>(null);
   const [gymId, setGymId] = useState('');
   const [token, setToken] = useState('');
+  const [refCode, setRefCode] = useState('');
+  const [referralInfo, setReferralInfo] = useState<{
+    referrerName: string;
+    campaignName: string;
+    reward?: string | null;
+  } | null>(null);
   const [form, setForm] = useState(initialForm);
   const [loadingBranch, setLoadingBranch] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -40,9 +46,38 @@ export default function AdmissionPage() {
     const params = new URLSearchParams(window.location.search);
     const nextGymId = params.get('gymId') ?? '';
     const nextToken = params.get('token') ?? '';
+    const nextRef = (params.get('ref') ?? '').trim().toUpperCase();
     setGymId(nextGymId);
     setToken(nextToken);
-    if (!nextGymId || !nextToken) { setLoadingBranch(false); setError('This admission link is incomplete. Please scan the branch QR again.'); return; }
+    setRefCode(nextRef);
+
+    if (nextRef) {
+      apiClient.get<{
+        branch: Branch;
+        referrer: { name: string };
+        campaign: { name: string; reward?: string | null };
+        gymId: string;
+      }>(`/admissions/referral/${encodeURIComponent(nextRef)}`)
+        .then(({ data }) => {
+          setBranch(data.branch);
+          setGymId(data.gymId);
+          setReferralInfo({
+            referrerName: data.referrer.name,
+            reward: data.campaign.reward,
+            campaignName: data.campaign.name,
+          });
+        })
+        .catch((requestError) => setError(apiError(requestError)))
+        .finally(() => setLoadingBranch(false));
+      return;
+    }
+
+    if (!nextGymId || !nextToken) {
+      setLoadingBranch(false);
+      setError('This admission link is incomplete. Please scan the branch QR or use your friend\'s referral link.');
+      return;
+    }
+
     apiClient.get<{ branch: Branch }>(`/admissions/${encodeURIComponent(nextGymId)}`, { params: { token: nextToken } })
       .then(({ data }) => setBranch(data.branch))
       .catch((requestError) => setError(apiError(requestError)))
@@ -65,7 +100,10 @@ export default function AdmissionPage() {
         gender: form.gender || undefined, emergencyPhone: form.emergencyPhone || undefined,
         bloodGroup: form.bloodGroup || undefined, notes: form.notes.trim() || undefined,
       };
-      const { data } = await apiClient.post<AdmissionResult>(`/admissions/${encodeURIComponent(gymId)}`, payload, { params: { token } });
+      const queryParams: Record<string, string> = {};
+      if (token) queryParams.token = token;
+      if (refCode) queryParams.ref = refCode;
+      const { data } = await apiClient.post<AdmissionResult>(`/admissions/${encodeURIComponent(gymId)}`, payload, { params: queryParams });
       setResult(data);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (requestError) {
@@ -84,6 +122,28 @@ export default function AdmissionPage() {
       <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-xl text-white" style={{ backgroundColor: accent }}>{branch.logoUrl ? <img src={branch.logoUrl} alt="" className="h-full w-full object-cover" /> : <Dumbbell size={22} />}</div>
       <div><p className="text-caption text-text-secondary">New member admission</p><h1 className="text-xl font-medium">{branch.name}</h1><p className="text-caption text-text-muted">{[branch.address, branch.city].filter(Boolean).join(', ')}</p></div>
     </header>
+
+    {referralInfo && (
+      <div className="mb-7 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 sm:p-5 flex items-start sm:items-center gap-3.5 shadow-xs">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-600 text-white shadow-xs">
+          <Gift size={20} strokeWidth={1.8} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-emerald-950">
+            Referred by {referralInfo.referrerName}
+          </p>
+          {referralInfo.reward ? (
+            <p className="text-xs text-emerald-800 mt-0.5 font-medium">
+              🎁 Welcome reward: <span className="font-semibold">{referralInfo.reward}</span>
+            </p>
+          ) : (
+            <p className="text-xs text-emerald-700 mt-0.5">
+              Welcome to {branch.name}! Sign up below to join with your friend&apos;s referral.
+            </p>
+          )}
+        </div>
+      </div>
+    )}
     <form onSubmit={submit} className="space-y-6">
       <div><h2 className="text-section-heading">Personal details</h2><p className="mt-1 text-caption text-text-muted">Fields marked * are required.</p></div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

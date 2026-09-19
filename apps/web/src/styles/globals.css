@@ -1425,3 +1425,101 @@
     display: none !important;
   }
 }
+
+/* ─── Notification Theme & Particle Animations ────────────── */
+@keyframes float-particle-1 {
+  0%, 100% { transform: translateY(0px) rotate(0deg) scale(1); }
+  50% { transform: translateY(-8px) rotate(6deg) scale(1.1); }
+}
+
+@keyframes float-particle-2 {
+  0%, 100% { transform: translateY(0px) rotate(0deg) scale(1); }
+  50% { transform: translateY(-12px) rotate(-8deg) scale(1.08); }
+}
+
+@keyframes float-particle-3 {
+  0%, 100% { transform: translateY(0px) rotate(0deg) scale(1); }
+  50% { transform: translateY(-6px) rotate(10deg) scale(1.12); }
+}
+
+@keyframes theme-pulse-glow {
+  0%, 100% { opacity: 0.85; filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.3)); }
+  50% { opacity: 1; filter: drop-shadow(0 0 16px rgba(255, 255, 255, 0.65)); }
+}
+
+.animate-particle-1 {
+  animation: float-particle-1 3s ease-in-out infinite;
+}
+.animate-particle-2 {
+  animation: float-particle-2 3.8s ease-in-out infinite 0.5s;
+}
+.animate-particle-3 {
+  animation: float-particle-3 4.2s ease-in-out infinite 1s;
+}
+.animate-theme-glow {
+  animation: theme-pulse-glow 2.5s ease-in-out infinite;
+}
+
+/* ─── Animated Motivational Quotes ───────────────────────── */
+@keyframes quote-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(22px) scale(0.97);
+    filter: blur(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes quote-exit {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-18px) scale(0.97);
+    filter: blur(8px);
+  }
+}
+
+@keyframes ambient-quote-glow {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(1) translate(-50%, 0);
+    filter: blur(48px);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.2) translate(-50%, -10px);
+    filter: blur(60px);
+  }
+}
+
+.animate-quote-enter {
+  animation: quote-enter 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-quote-exit {
+  animation: quote-exit 0.4s cubic-bezier(0.7, 0, 0.84, 0) forwards;
+}
+
+.animate-ambient-quote-glow {
+  animation: ambient-quote-glow 5s ease-in-out infinite;
+}
+
+/* Chrome autofill dark background fix */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-text-fill-color: #ffffff !important;
+  -webkit-box-shadow: 0 0 0px 1000px #18181b inset !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+

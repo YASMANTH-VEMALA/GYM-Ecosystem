@@ -60,6 +60,9 @@ model Gym {
   dietCharts         DietChart[]
   notificationsLog   NotificationLog[]
   saasSubscription   SaasSubscription?
+  referralCampaigns  ReferralCampaign[]
+  memberReferrals    MemberReferral[]
+  memberReferralCodes MemberReferralCode[]
 
   @@index([slug])
   @@index([organizationId])
@@ -144,6 +147,9 @@ model Member {
   dietAssignments     MemberDietAssignment[]
   bodyStats           BodyStat[]
   notificationsLog    NotificationLog[]
+  referralCodes       MemberReferralCode[]
+  referralsMade       MemberReferral[]     @relation("ReferrerMember")
+  referredBy          MemberReferral[]     @relation("ReferredMember")
 
   @@unique([gymId, memberCode])
   @@index([gymId])
@@ -469,4 +475,71 @@ model SaasSubscription {
 
   @@index([status])
   @@map("saas_subscriptions")
+}
+
+// ─── Referrals ─────────────────────────────────────────
+
+model ReferralCampaign {
+  id                       String    @id @default(uuid()) @db.Uuid
+  gymId                    String    @map("gym_id") @db.Uuid
+  name                     String    @db.VarChar(200)
+  description              String?
+  rewardDescription        String?   @map("reward_description")
+  refereeRewardDescription String?   @map("referee_reward_description")
+  maxReferralsPerMember    Int?      @map("max_referrals_per_member")
+  isActive                 Boolean   @default(true) @map("is_active")
+  startsAt                 DateTime  @map("starts_at") @db.Timestamptz()
+  endsAt                   DateTime? @map("ends_at") @db.Timestamptz()
+  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt                DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+
+  gym              Gym                  @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  referrals        MemberReferral[]
+  referralCodes    MemberReferralCode[]
+
+  @@index([gymId, isActive])
+  @@map("referral_campaigns")
+}
+
+model MemberReferralCode {
+  id         String   @id @default(uuid()) @db.Uuid
+  gymId      String   @map("gym_id") @db.Uuid
+  campaignId String   @map("campaign_id") @db.Uuid
+  memberId   String   @map("member_id") @db.Uuid
+  code       String   @unique @db.VarChar(20)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  gym      Gym              @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  campaign ReferralCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  member   Member           @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, memberId])
+  @@index([gymId])
+  @@map("member_referral_codes")
+}
+
+model MemberReferral {
+  id               String    @id @default(uuid()) @db.Uuid
+  gymId            String    @map("gym_id") @db.Uuid
+  campaignId       String    @map("campaign_id") @db.Uuid
+  referrerId       String    @map("referrer_id") @db.Uuid
+  referredMemberId String?   @map("referred_member_id") @db.Uuid
+  referralCode     String    @map("referral_code") @db.VarChar(20)
+  status           String    @default("pending") @db.VarChar(20)
+  convertedAt      DateTime? @map("converted_at") @db.Timestamptz()
+  rewardAppliedAt  DateTime? @map("reward_applied_at") @db.Timestamptz()
+  rewardNotes      String?   @map("reward_notes")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+
+  gym           Gym              @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  campaign      ReferralCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  referrer      Member           @relation("ReferrerMember", fields: [referrerId], references: [id], onDelete: Cascade)
+  referredMember Member?         @relation("ReferredMember", fields: [referredMemberId], references: [id])
+
+  @@index([gymId, campaignId])
+  @@index([referrerId])
+  @@index([referredMemberId])
+  @@index([referralCode])
+  @@map("member_referrals")
 }

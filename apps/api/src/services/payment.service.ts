@@ -2,6 +2,7 @@ import prisma from '@gymstack/db';
 import { Prisma } from '@gymstack/db';
 import type { PaymentHistoryQuery } from '@gymstack/shared';
 import { generateInvoicePdf } from '../utils/gst-invoice';
+import { tryConvertReferral } from './referral.service';
 
 async function getNextInvoiceNumber(gymId: string): Promise<string> {
   const year = new Date().getFullYear();
@@ -66,6 +67,9 @@ export async function collectPayment(gymId: string, data: {
       paidAt: data.paidAt,
     },
   });
+
+  // Attempt referral conversion if this member was referred
+  tryConvertReferral(data.memberId, gymId).catch(() => {});
 
   // Generate invoice PDF
   let pdfBuffer: Buffer | null = null;

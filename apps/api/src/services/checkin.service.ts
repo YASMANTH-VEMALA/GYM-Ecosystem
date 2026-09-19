@@ -1,4 +1,5 @@
 import prisma from '@gymstack/db';
+import { tryConvertReferral } from './referral.service';
 
 export async function checkIn(memberCode: string, gymId: string, source: string = 'kiosk') {
   // Find member by code
@@ -45,6 +46,9 @@ export async function checkIn(memberCode: string, gymId: string, source: string 
   });
 
   const totalVisits = await prisma.checkIn.count({ where: { memberId: member.id } });
+
+  // Fire-and-forget: auto-convert referral if this is the member's first check-in
+  tryConvertReferral(member.id, gymId).catch(() => {/* non-fatal */});
 
   // Check for pending fees (simplified: any subscription that's expired)
   const feesDue = member.subscriptions.length === 0 ? 1 : 0; // simplified flag

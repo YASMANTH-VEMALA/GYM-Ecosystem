@@ -33,6 +33,7 @@ interface AuthContextType {
   selectedBranchId: string | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   changePassword: (password: string) => Promise<void>;
   requestPasswordReset: (email: string) => Promise<void>;
@@ -146,7 +147,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (restoredProfile) setIsLoading(false);
       try {
         await loadProfile(data.session);
-      } catch {
+      } catch (err) {
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        if (status === 403 && typeof window !== 'undefined') {
+          if (!window.location.pathname.includes('complete-profile')) {
+            window.location.href = '/auth/complete-profile';
+            return;
+          }
+        }
         if (mounted && !restoredProfile) setUser(null);
       } finally {
         if (mounted) setIsLoading(false);
@@ -157,7 +165,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!mounted) return;
       setApiSession(nextSession);
       setSession(nextSession);
-      window.setTimeout(() => loadProfile(nextSession).catch(() => setUser(null)), 0);
+      window.setTimeout(() => {
+        loadProfile(nextSession).catch((err) => {
+          const status = (err as { response?: { status?: number } })?.response?.status;
+          if (status === 403 && typeof window !== 'undefined') {
+            if (!window.location.pathname.includes('complete-profile')) {
+              window.location.href = '/auth/complete-profile';
+              return;
+            }
+          }
+          setUser(null);
+        });
+      }, 0);
     });
 
     return () => {
@@ -178,12 +197,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await loadProfile(data.session);
     } catch (error) {
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      if (status === 403 && typeof window !== 'undefined') {
+        if (!window.location.pathname.includes('complete-profile')) {
+          window.location.href = '/auth/complete-profile';
+          return;
+        }
+      }
       await supabase.auth.signOut();
       setApiSession(null);
       setSession(null);
       setUser(null);
       throw error;
     }
+  };
+
+  const loginWithGoogle = async () => {
+    assertSupabaseConfigured();
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+        queryParams: { access_type: 'offline', prompt: 'consent' },
+      },
+    });
   };
 
   const logout = async () => {
@@ -222,7 +259,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, branches, selectedBranchId, isLoading, login, logout, changePassword, requestPasswordReset, refreshProfile: () => loadProfile(session), switchBranch }}>
+    <AuthContext.Provider value={{
+      user,
+      session,
+      branches,
+      selectedBranchId,
+      isLoading,
+      login,
+      loginWithGoogle,
+      logout,
+      changePassword,
+      requestPasswordReset,
+      refreshProfile: async () => {
+        const { data } = await supabase.auth.getSession();
+        await loadProfile(data.session ?? session);
+      },
+      switchBranch,
+    }}>
       {children}
     </AuthContext.Provider>
   );
