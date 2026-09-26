@@ -30,6 +30,9 @@ import {
   Building2,
   ShieldOff,
   ChevronRight,
+  Wrench,
+  MessageSquareCode,
+  Video,
 } from 'lucide-react';
 import type { PortalSection } from '@gymstack/shared';
 
@@ -40,6 +43,9 @@ const navItems: Array<{ href: string; label: string; icon: typeof LayoutGrid; ro
   { href: '/fees', label: 'Fees', icon: IndianRupee, roles: ['gym_owner', 'manager', 'receptionist'], section: 'fees' },
   { href: '/check-ins', label: 'Check-ins', icon: CalendarCheck2, roles: ['gym_owner', 'manager', 'receptionist'], section: 'checkins' },
   { href: '/qr-codes', label: 'QR Codes', icon: ScanQrCode, roles: ['gym_owner', 'manager', 'receptionist'], section: 'qr_codes' },
+  { href: '/maintenance', label: 'Maintenance', icon: Wrench, roles: ['gym_owner', 'manager', 'receptionist'] },
+  { href: '/whatsapp', label: 'WhatsApp Automation', icon: MessageSquareCode, roles: ['gym_owner', 'manager', 'receptionist'] },
+  { href: '/cctv', label: 'CCTV & Alerts', icon: Video, roles: ['gym_owner', 'manager'] },
   { href: '/payments', label: 'Payments', icon: CreditCard, roles: ['gym_owner', 'manager', 'receptionist'], section: 'payments' },
   { href: '/plans', label: 'Plans', icon: Layers, roles: ['gym_owner', 'manager'], section: 'plans' },
   { href: '/referrals', label: 'Referrals', icon: Gift, roles: ['gym_owner', 'manager'] },
@@ -271,8 +277,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </span>
             ) : null}
           </div>
-          <span className="text-sm text-gray-500 font-mono">
-            {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          <span className="hidden sm:inline-block text-sm text-gray-500 font-mono whitespace-nowrap">
+            {new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
           </span>
         </header>
 

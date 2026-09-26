@@ -69,9 +69,92 @@ export default function BranchQrCodesPage() {
     finally { setRegenerating(false); }
   };
 
-  return <div className="space-y-8">
-    <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between"><div><h1 className="text-page-title">Branch QR Codes</h1><p className="mt-2 text-body text-text-secondary">Admission and attendance links for {config.gymName}</p></div>{user?.role === 'gym_owner' && <button className="btn btn-secondary" disabled={regenerating} onClick={regenerate}><RefreshCw size={16} className={regenerating ? 'animate-spin' : ''} /> Replace both codes</button>}</div>
-    <div className="flex items-start gap-3 rounded-card border border-blue-100 bg-blue-50 p-4 text-blue-900"><ShieldCheck className="mt-0.5 shrink-0" size={18} /><p className="text-caption leading-5">Each QR is signed for this branch. Managers can display and download them. Only an owner can replace compromised codes.</p></div>
-    {query.isLoading ? <div className="grid gap-6 lg:grid-cols-2">{[0, 1].map((item) => <div key={item} className="h-[520px] rounded-card bg-neutral-100 dark:bg-neutral-800/40 animate-pulse" />)}</div> : query.isError ? <div className="card empty-state"><QrCode className="empty-state-icon" /><p className="empty-state-title">Could not load QR codes</p><p className="empty-state-description">Check your connection and try again.</p><button className="btn btn-primary" onClick={() => query.refetch()}>Retry</button></div> : <div className="grid gap-6 lg:grid-cols-2">{cards.map(({ key, title, description, icon: Icon, image, url }) => <section key={key} className="card"><div className="flex items-start gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-stat-card text-primary"><Icon size={19} /></div><div><h2 className="text-section-heading">{title}</h2><p className="mt-1 text-caption leading-5 text-text-secondary">{description}</p></div></div><div className="mx-auto mt-6 w-full max-w-[320px] aspect-square rounded-card border border-border bg-white p-4 flex items-center justify-center"><img src={image} alt={`${title} for ${config.gymName}`} width={320} height={320} className="h-full w-full object-contain" /></div><p className="mt-4 truncate rounded-btn bg-stat-card px-3 py-2 font-mono text-[11px] text-text-muted">{url}</p><div className="mt-4 flex flex-wrap gap-3"><button className="btn btn-primary" onClick={() => download(image, key)}><Download size={16} /> Download PNG</button><button className="btn btn-secondary" onClick={() => void copy(url)}><Clipboard size={16} /> Copy link</button></div></section>)}</div>}
-  </div>;
+  return (
+    <div className="space-y-6 min-w-0 w-full overflow-hidden">
+      {/* Header */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-page-title">Branch QR Codes</h1>
+          <p className="mt-1 text-body text-text-secondary truncate">Admission and attendance links for {config.gymName}</p>
+        </div>
+        {user?.role === 'gym_owner' && (
+          <button
+            className="btn btn-secondary shrink-0 self-start sm:self-auto"
+            disabled={regenerating}
+            onClick={regenerate}
+          >
+            <RefreshCw size={16} className={regenerating ? 'animate-spin' : ''} />
+            Replace both codes
+          </button>
+        )}
+      </div>
+
+      {/* Info banner */}
+      <div className="flex items-start gap-3 rounded-card border border-blue-100 bg-blue-50 p-4 text-blue-900 overflow-hidden">
+        <ShieldCheck className="mt-0.5 shrink-0" size={18} />
+        <p className="text-caption leading-5 min-w-0 break-words">
+          Each QR is signed for this branch. Managers can display and download them. Only an owner can replace compromised codes.
+        </p>
+      </div>
+
+      {/* QR cards */}
+      {query.isLoading ? (
+        <div className="grid gap-6 lg:grid-cols-2">
+          {[0, 1].map((item) => (
+            <div key={item} className="h-[480px] rounded-card bg-neutral-100 dark:bg-neutral-800/40 animate-pulse" />
+          ))}
+        </div>
+      ) : query.isError ? (
+        <div className="card empty-state">
+          <QrCode className="empty-state-icon" />
+          <p className="empty-state-title">Could not load QR codes</p>
+          <p className="empty-state-description">Check your connection and try again.</p>
+          <button className="btn btn-primary" onClick={() => query.refetch()}>Retry</button>
+        </div>
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-2">
+          {cards.map(({ key, title, description, icon: Icon, image, url }) => (
+            <section key={key} className="card min-w-0 overflow-hidden">
+              <div className="flex items-start gap-3">
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-stat-card text-primary">
+                  <Icon size={19} />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-section-heading">{title}</h2>
+                  <p className="mt-1 text-caption leading-5 text-text-secondary">{description}</p>
+                </div>
+              </div>
+
+              {/* QR image — responsive square, max 280px on mobile, 320px on larger */}
+              <div className="mx-auto mt-6 w-full max-w-[280px] sm:max-w-[320px] aspect-square rounded-card border border-border bg-white p-3 flex items-center justify-center">
+                <img
+                  src={image}
+                  alt={`${title} for ${config.gymName}`}
+                  width={320}
+                  height={320}
+                  className="h-full w-full object-contain"
+                />
+              </div>
+
+              {/* URL pill — truncated cleanly */}
+              <p className="mt-4 truncate rounded-btn bg-stat-card px-3 py-2 font-mono text-[11px] text-text-muted max-w-full">
+                {url}
+              </p>
+
+              {/* Actions */}
+              <div className="mt-4 flex flex-wrap gap-3">
+                <button className="btn btn-primary" onClick={() => download(image, key)}>
+                  <Download size={16} /> Download PNG
+                </button>
+                <button className="btn btn-secondary" onClick={() => void copy(url)}>
+                  <Clipboard size={16} /> Copy link
+                </button>
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
+

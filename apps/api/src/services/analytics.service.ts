@@ -104,26 +104,33 @@ export async function getChurnRisk(gymId: string) {
 }
 
 export async function getMemberGrowth(gymId: string, months: number = 12) {
-  const results = [];
-  const now = new Date();
+  const rows = await prisma.$queryRaw<
+    Array<{ month: string; new_members: bigint; total_members: bigint }>
+  >`
+    WITH months AS (
+      SELECT date_trunc('month', d)::date AS month_start,
+             (date_trunc('month', d) + interval '1 month' - interval '1 day')::date AS month_end
+      FROM generate_series(
+        date_trunc('month', now()) - (${months - 1} || ' months')::interval,
+        date_trunc('month', now()),
+        '1 month'::interval
+      ) AS d
+    )
+    SELECT
+      to_char(m.month_start, 'YYYY-MM') AS month,
+      COUNT(CASE WHEN mb.joined_at >= m.month_start AND mb.joined_at <= m.month_end THEN 1 END) AS new_members,
+      COUNT(CASE WHEN mb.joined_at <= m.month_end THEN 1 END) AS total_members
+    FROM months m
+    LEFT JOIN members mb ON mb.gym_id = ${gymId}::uuid
+    GROUP BY m.month_start
+    ORDER BY m.month_start
+  `;
 
-  for (let i = months - 1; i >= 0; i--) {
-    const start = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
-
-    const [newMembers, totalMembers] = await Promise.all([
-      prisma.member.count({ where: { gymId, joinedAt: { gte: start, lte: end } } }),
-      prisma.member.count({ where: { gymId, joinedAt: { lte: end } } }),
-    ]);
-
-    results.push({
-      month: start.toISOString().slice(0, 7),
-      newMembers,
-      totalMembers,
-    });
-  }
-
-  return results;
+  return rows.map((r) => ({
+    month: r.month,
+    newMembers: Number(r.new_members),
+    totalMembers: Number(r.total_members),
+  }));
 }
 
 export async function getDashboardOverview(gymId: string) {
