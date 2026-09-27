@@ -10,6 +10,8 @@ const envSchema = z.object({
   SUPABASE_LOGO_BUCKET: z.string().min(1).default('gymstack-logos'),
   WEB_URL: z.string().default('http://localhost:3000'),
   PLATFORM_DOMAIN: z.string().default('mygymapp.in'),
+  CORS_ORIGIN: z.string().optional(),
+  ALLOWED_ORIGINS: z.string().optional(),
   QR_ENCRYPTION_KEY: z.string().min(32),
   ENABLE_CRON_JOBS: z.enum(['true', 'false']).default('true').transform((value) => value === 'true'),
   RESEND_API_KEY: z.string().optional(),
